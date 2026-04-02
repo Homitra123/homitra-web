@@ -10,6 +10,7 @@ import CookingBooking from './pages/CookingBooking';
 import Checkout from './pages/Checkout';
 import Bookings from './pages/Bookings';
 import Profile from './pages/Profile';
+import BookingSuccess from './pages/BookingSuccess';
 
 function App() {
   return (
@@ -69,6 +70,14 @@ function App() {
                   <Layout>
                     <Profile />
                   </Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/booking-success"
+              element={
+                <ProtectedRoute>
+                  <BookingSuccess />
                 </ProtectedRoute>
               }
             />
