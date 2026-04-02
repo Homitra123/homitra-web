@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Calendar, Clock, MapPin, CreditCard } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
+import { ArrowLeft, Calendar, Clock, MapPin, CreditCard, AlertCircle } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import PaymentModal from '../components/PaymentModal';
 
 interface BookingData {
@@ -17,14 +18,30 @@ interface BookingData {
 const Checkout = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [phoneError, setPhoneError] = useState(false);
 
   const bookingData = location.state?.bookingData as BookingData | undefined;
+
+  useEffect(() => {
+    if (profile && !profile.phone) {
+      setPhoneError(true);
+    }
+  }, [profile]);
 
   if (!bookingData) {
     navigate('/');
     return null;
   }
+
+  const handleProceedToPayment = () => {
+    if (!profile?.phone) {
+      setPhoneError(true);
+      return;
+    }
+    setShowPaymentModal(true);
+  };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -111,9 +128,32 @@ const Checkout = () => {
                 <span className="text-lg font-bold text-gray-900">Total Amount</span>
                 <span className="text-2xl font-bold text-blue-600">₹{totalAmount}</span>
               </div>
+              {phoneError && (
+                <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-amber-900 mb-1">
+                        Phone Number Required
+                      </p>
+                      <p className="text-sm text-amber-800 mb-3">
+                        Please add your phone number to complete the booking
+                      </p>
+                      <Link
+                        to="/profile"
+                        className="inline-block text-sm font-medium text-amber-900 underline hover:text-amber-700"
+                      >
+                        Go to Profile →
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <button
-                onClick={() => setShowPaymentModal(true)}
-                className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold py-4 rounded-xl transition-colors shadow-lg shadow-blue-600/30 flex items-center justify-center space-x-2"
+                onClick={handleProceedToPayment}
+                disabled={!profile?.phone}
+                className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-4 rounded-xl transition-colors shadow-lg shadow-blue-600/30 flex items-center justify-center space-x-2"
               >
                 <CreditCard size={20} />
                 <span>Pay & Confirm Booking</span>

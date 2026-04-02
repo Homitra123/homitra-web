@@ -1,7 +1,7 @@
 import { ChefHat, Car, Home as HomeIcon, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { services } from '../data/mockData';
-import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
 
 const iconMap = {
   ChefHat,
@@ -10,13 +10,21 @@ const iconMap = {
 };
 
 const Home = () => {
-  const { user } = useApp();
+  const { user, profile } = useAuth();
+
+  const getGreeting = () => {
+    if (!user) return 'Greetings !!';
+    if (profile?.full_name) {
+      return `Greetings, ${profile.full_name.split(' ')[0]} !!`;
+    }
+    return `Greetings, ${profile?.email.split('@')[0] || 'there'} !!`;
+  };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
+    <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 pb-24">
       <div className="mb-8">
         <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
-          Welcome, {user.name.split(' ')[0]}
+          {getGreeting()}
         </h1>
         <p className="text-gray-600 text-lg">What can we help you with today?</p>
       </div>

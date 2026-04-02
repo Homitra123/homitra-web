@@ -1,20 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, CreditCard, Smartphone, CheckCircle, Loader2 } from 'lucide-react';
-import { useApp } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 
 interface PaymentModalProps {
   amount: number;
-  bookingData: {
-    serviceId: string;
-    serviceName: string;
-    tier: string;
-    date: string;
-    timeSlot: string;
-    location: string;
-    address: string;
-    price: number;
-  };
+  bookingData: any;
   onClose: () => void;
 }
 
@@ -22,22 +14,53 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
   const [paymentMethod, setPaymentMethod] = useState<'upi' | 'card'>('upi');
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
-  const { addBooking } = useApp();
+  const [error, setError] = useState('');
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
 
-  const handlePayment = () => {
-    setIsProcessing(true);
+  const handlePayment = async () => {
+    if (!user || !profile) {
+      setError('You must be logged in to complete booking');
+      return;
+    }
 
-    setTimeout(() => {
+    setIsProcessing(true);
+    setError('');
+
+    try {
+      const { error: insertError } = await supabase.from('bookings').insert({
+        user_id: user.id,
+        service_id: bookingData.serviceId,
+        service_name: bookingData.serviceName,
+        tier: bookingData.tier || 'Standard',
+        booking_mode: bookingData.bookingMode || 'single',
+        duration: bookingData.duration || '60 min',
+        date: bookingData.date,
+        dates: bookingData.dates || [bookingData.date],
+        weekdays: bookingData.weekdays || [],
+        time_slot: bookingData.timeSlot,
+        flexible_bookings: bookingData.flexibleBookings || null,
+        location: bookingData.location,
+        address: bookingData.address,
+        price: bookingData.price,
+        visits: bookingData.visits || 1,
+        status: 'confirmed',
+      });
+
+      if (insertError) {
+        throw insertError;
+      }
+
       setIsProcessing(false);
       setIsSuccess(true);
-
-      addBooking(bookingData);
 
       setTimeout(() => {
         navigate('/bookings', { state: { showSuccess: true } });
       }, 2000);
-    }, 2000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to create booking');
+      setIsProcessing(false);
+    }
   };
 
   if (isSuccess) {
@@ -166,6 +189,12 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
                   />
                 </div>
               </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+              {error}
             </div>
           )}
 

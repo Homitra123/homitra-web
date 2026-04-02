@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Calendar, MapPin, Clock, User, CheckCircle } from 'lucide-react';
-import { useApp } from '../context/AppContext';
-import { Booking } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { supabase, Booking } from '../lib/supabase';
 
 const Bookings = () => {
-  const { bookings } = useApp();
+  const { user } = useAuth();
   const location = useLocation();
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
   const [showSuccessBanner, setShowSuccessBanner] = useState(false);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (location.state?.showSuccess) {
@@ -17,6 +19,31 @@ const Bookings = () => {
       setTimeout(() => setShowSuccessBanner(false), 5000);
     }
   }, [location]);
+
+  useEffect(() => {
+    if (user) {
+      fetchBookings();
+    }
+  }, [user]);
+
+  const fetchBookings = async () => {
+    if (!user) return;
+
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching bookings:', error);
+    } else {
+      setBookings(data || []);
+    }
+
+    setLoading(false);
+  };
 
   const activeBookings = bookings.filter(
     b => b.status !== 'completed' && b.status !== 'cancelled'
@@ -27,8 +54,8 @@ const Bookings = () => {
 
   const displayedBookings = activeTab === 'active' ? activeBookings : completedBookings;
 
-  const getStatusBadge = (status: Booking['status']) => {
-    const statusConfig = {
+  const getStatusBadge = (status: string) => {
+    const statusConfig: Record<string, { label: string; color: string }> = {
       pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800' },
       confirmed: { label: 'Confirmed', color: 'bg-blue-100 text-blue-800' },
       partner_assigned: { label: 'Partner Assigned', color: 'bg-green-100 text-green-800' },
@@ -37,7 +64,7 @@ const Bookings = () => {
       cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-800' },
     };
 
-    const config = statusConfig[status];
+    const config = statusConfig[status] || { label: status, color: 'bg-gray-100 text-gray-800' };
     return (
       <span className={`px-3 py-1 rounded-full text-xs font-semibold ${config.color}`}>
         {config.label}
@@ -55,8 +82,19 @@ const Bookings = () => {
     });
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading bookings...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
+    <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 pb-24">
       {showSuccessBanner && (
         <div className="mb-6 bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center space-x-3 animate-in fade-in slide-in-from-top-4 duration-500">
           <CheckCircle size={24} className="text-green-600 flex-shrink-0" />
@@ -119,10 +157,10 @@ const Bookings = () => {
               <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-4">
                 <div className="mb-4 md:mb-0">
                   <div className="flex items-center space-x-3 mb-2">
-                    <h3 className="text-xl font-bold text-gray-900">{booking.serviceName}</h3>
+                    <h3 className="text-xl font-bold text-gray-900">{booking.service_name}</h3>
                     {getStatusBadge(booking.status)}
                   </div>
-                  <p className="text-gray-600">Booking ID: {booking.id}</p>
+                  <p className="text-gray-600">Booking ID: {booking.id.slice(0, 8)}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-2xl font-bold text-blue-600">₹{booking.price}</p>
@@ -142,7 +180,7 @@ const Bookings = () => {
                   <Clock size={20} className="text-gray-400 mt-1 flex-shrink-0" />
                   <div>
                     <p className="text-sm text-gray-500">Time Slot</p>
-                    <p className="text-gray-900 font-medium">{booking.timeSlot}</p>
+                    <p className="text-gray-900 font-medium">{booking.time_slot}</p>
                   </div>
                 </div>
                 <div className="flex items-start space-x-3">
@@ -153,12 +191,12 @@ const Bookings = () => {
                     <p className="text-gray-600 text-sm">{booking.address}</p>
                   </div>
                 </div>
-                {booking.partnerName && (
+                {booking.partner_name && (
                   <div className="flex items-start space-x-3">
                     <User size={20} className="text-gray-400 mt-1 flex-shrink-0" />
                     <div>
                       <p className="text-sm text-gray-500">Service Partner</p>
-                      <p className="text-gray-900 font-medium">{booking.partnerName}</p>
+                      <p className="text-gray-900 font-medium">{booking.partner_name}</p>
                     </div>
                   </div>
                 )}
