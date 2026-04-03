@@ -19,14 +19,58 @@ interface PaymentModalProps {
 const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
+  const [razorpayLoaded, setRazorpayLoaded] = useState(false);
   const { user, profile } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!window.Razorpay) {
-      setError('Payment system not loaded. Please refresh the page.');
-    }
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    script.onload = () => setRazorpayLoaded(true);
+    script.onerror = () => {
+      console.error('Failed to load Razorpay SDK');
+      setError('Failed to load payment gateway. Please refresh and try again.');
+    };
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
   }, []);
+
+  const completeBooking = async () => {
+    const { data: insertedBooking, error: insertError } = await supabase
+      .from('bookings')
+      .insert({
+        user_id: user!.id,
+        service_id: bookingData.serviceId,
+        service_name: bookingData.serviceName,
+        tier: bookingData.tier || 'Standard',
+        booking_mode: bookingData.bookingMode || 'single',
+        duration: bookingData.duration || '60 min',
+        date: bookingData.date,
+        dates: bookingData.dates || [bookingData.date],
+        weekdays: bookingData.weekdays || [],
+        time_slot: bookingData.timeSlot,
+        flexible_bookings: bookingData.flexibleBookings || null,
+        location: bookingData.location,
+        address: bookingData.address,
+        price: amount,
+        visits: bookingData.visits || 1,
+        status: 'confirmed',
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('Error saving booking:', insertError);
+      throw insertError;
+    }
+
+    onClose();
+    navigate(insertedBooking?.id ? `/booking-success?booking_id=${insertedBooking.id}` : '/bookings', { replace: true });
+  };
 
   const handlePayment = async () => {
     if (!user || !profile) {
@@ -34,8 +78,8 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
       return;
     }
 
-    if (!window.Razorpay) {
-      setError('Payment system not available. Please refresh the page.');
+    if (!razorpayLoaded) {
+      setError('Payment gateway is loading. Please wait a moment and try again.');
       return;
     }
 
@@ -43,81 +87,50 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
     setError('');
 
     try {
-      const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID;
-
-      if (!razorpayKey) {
-        throw new Error('Payment configuration missing');
-      }
-
       const options = {
-        key: razorpayKey,
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID,
         amount: amount * 100,
         currency: 'INR',
         name: 'Homitra',
-        description: `${bookingData.serviceName} - ${bookingData.tier}`,
+        description: bookingData.serviceName,
         image: '/Home_Assiatnt_Pic.png',
+        handler: async function (response: any) {
+          console.log('Payment successful:', response);
+          try {
+            await completeBooking();
+          } catch (err: any) {
+            console.error('Error completing booking:', err);
+            setError('Payment successful but failed to save booking. Please contact support.');
+            setIsProcessing(false);
+          }
+        },
         prefill: {
           name: profile.full_name || '',
-          email: profile.email || '',
+          email: user.email || '',
           contact: profile.phone || '',
         },
         theme: {
           color: '#2563eb',
         },
-        handler: async function (response: any) {
-          try {
-            const { data: insertedBooking, error: insertError } = await supabase
-              .from('bookings')
-              .insert({
-                user_id: user.id,
-                service_id: bookingData.serviceId,
-                service_name: bookingData.serviceName,
-                tier: bookingData.tier || 'Standard',
-                booking_mode: bookingData.bookingMode || 'single',
-                duration: bookingData.duration || '60 min',
-                service_date: bookingData.date,
-                dates: bookingData.dates || [bookingData.date],
-                weekdays: bookingData.weekdays || [],
-                service_time: bookingData.timeSlot,
-                flexible_bookings: bookingData.flexibleBookings || null,
-                location: bookingData.location,
-                address: bookingData.address,
-                total_price: amount,
-                visits: bookingData.visits || 1,
-                status: 'confirmed',
-                payment_id: response.razorpay_payment_id,
-              })
-              .select()
-              .single();
-
-            if (insertError) {
-              throw insertError;
-            }
-
-            navigate(`/booking-success?booking_id=${insertedBooking.id}`);
-          } catch (err: any) {
-            console.error('Error saving booking:', err);
-            setError('Payment successful but booking failed to save. Please contact support.');
+        modal: {
+          ondismiss: function() {
             setIsProcessing(false);
           }
-        },
-        modal: {
-          ondismiss: function () {
-            setIsProcessing(false);
-          },
-        },
+        }
       };
 
-      const razorpay = new window.Razorpay(options);
+      const rzp = new window.Razorpay(options);
 
-      razorpay.on('payment.failed', function (response: any) {
-        setError('Payment failed. Please try again.');
+      rzp.on('payment.failed', function (response: any) {
+        console.error('Payment failed:', response.error);
+        setError(`Payment failed: ${response.error.description}`);
         setIsProcessing(false);
       });
 
-      razorpay.open();
+      rzp.open();
     } catch (err: any) {
-      setError(err.message || 'Failed to initiate payment');
+      console.error('Payment error:', err);
+      setError(err.message || 'Failed to initialize payment. Please try again.');
       setIsProcessing(false);
     }
   };
@@ -163,10 +176,15 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
 
           <button
             onClick={handlePayment}
-            disabled={isProcessing}
+            disabled={isProcessing || !razorpayLoaded}
             className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold py-4 rounded-xl transition-colors shadow-lg shadow-blue-600/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
           >
-            {isProcessing ? (
+            {!razorpayLoaded ? (
+              <>
+                <Loader2 size={20} className="animate-spin" />
+                <span>Loading Payment Gateway...</span>
+              </>
+            ) : isProcessing ? (
               <>
                 <Loader2 size={20} className="animate-spin" />
                 <span>Opening Payment Gateway...</span>

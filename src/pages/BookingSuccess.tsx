@@ -6,11 +6,11 @@ import { supabase } from '../lib/supabase';
 interface BookingDetails {
   id: string;
   service_name: string;
-  service_date: string;
-  service_time: string;
+  date: string;
+  time_slot: string;
   address: string;
-  total_price: number;
-  payment_id: string;
+  price: number;
+  tier: string;
   created_at: string;
 }
 
@@ -66,10 +66,10 @@ const BookingSuccess = () => {
     return null;
   }
 
-  const formattedDate = new Date(booking.service_date).toLocaleDateString('en-IN', {
-    weekday: 'long',
+  const formattedDate = new Date(booking.date).toLocaleDateString('en-IN', {
+    weekday: 'short',
     year: 'numeric',
-    month: 'long',
+    month: 'short',
     day: 'numeric'
   });
 
@@ -122,7 +122,7 @@ const BookingSuccess = () => {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500 mb-1">Time</p>
-                  <p className="text-lg font-semibold text-gray-900">{booking.service_time}</p>
+                  <p className="text-lg font-semibold text-gray-900">{booking.time_slot}</p>
                 </div>
               </div>
 
@@ -135,23 +135,13 @@ const BookingSuccess = () => {
                   <p className="text-lg font-semibold text-gray-900">{booking.address}</p>
                 </div>
               </div>
-
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <IndianRupee className="text-emerald-600" size={24} />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500 mb-1">Payment ID</p>
-                  <p className="text-lg font-mono text-gray-900">{booking.payment_id}</p>
-                </div>
-              </div>
             </div>
 
             <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-6 mb-6">
               <div className="flex justify-between items-center">
                 <div>
                   <p className="text-blue-100 text-sm mb-1">Total Amount Paid</p>
-                  <p className="text-3xl font-bold text-white">₹{booking.total_price}</p>
+                  <p className="text-3xl font-bold text-white">₹{booking.price}</p>
                 </div>
                 <CheckCircle size={48} className="text-blue-200" />
               </div>

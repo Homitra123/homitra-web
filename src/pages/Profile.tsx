@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { User, Mail, Phone, ChevronRight, LogOut, Bell, Shield, HelpCircle, CreditCard as Edit2, X, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 
 const Profile = () => {
   const { user, profile, signOut, updateProfile } = useAuth();
+  const navigate = useNavigate();
   const [isEditingPhone, setIsEditingPhone] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
@@ -56,12 +58,18 @@ const Profile = () => {
     setSaving(true);
     setError('');
 
-    const { error: updateError } = await updateProfile({ phone: phoneNumber });
+    try {
+      const { error: updateError } = await updateProfile({ phone: phoneNumber });
 
-    if (updateError) {
-      setError('Failed to update phone number');
-    } else {
-      setIsEditingPhone(false);
+      if (updateError) {
+        console.error('Profile update error:', updateError);
+        setError(`Failed to update phone number: ${updateError.message}`);
+      } else {
+        setIsEditingPhone(false);
+      }
+    } catch (err: any) {
+      console.error('Unexpected error:', err);
+      setError(`Error: ${err.message}`);
     }
 
     setSaving(false);
@@ -89,6 +97,7 @@ const Profile = () => {
 
   const handleLogout = async () => {
     await signOut();
+    navigate('/login', { replace: true });
   };
 
   const menuItems = [
