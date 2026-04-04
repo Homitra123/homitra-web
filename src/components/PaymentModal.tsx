@@ -107,99 +107,39 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
 
       console.log('SANITIZED DATA OBJECT (verified columns only):', bookingRecord);
 
-      console.log('=== RETRIEVING SESSION TOKEN ===');
-      const { data: { session } } = await supabase.auth.getSession();
+      console.log('=== TESTING WITH MINIMAL ANONYMOUS HEADERS ===');
 
-      if (!session?.access_token) {
-        const errorMsg = 'No active session found. Please log in again.';
-        console.error('CRITICAL: Session retrieval failed');
-        console.error('Session object:', session);
-        alert('Authentication Error: ' + errorMsg);
-        throw new Error(errorMsg);
-      }
-
-      console.log('Session token retrieved successfully');
-      console.log('Session user ID:', session.user?.id);
-      console.log('Session token (first 20 chars):', session.access_token.substring(0, 20) + '...');
-      console.log('Session token (last 20 chars):', '...' + session.access_token.substring(session.access_token.length - 20));
-
-      console.log('=== VERIFYING USER ID MATCH ===');
-      console.log('Booking user_id:', bookingRecord.user_id);
-      console.log('Session user_id:', session.user?.id);
-      console.log('IDs match:', bookingRecord.user_id === session.user?.id);
-
-      if (bookingRecord.user_id !== session.user?.id) {
-        const errorMsg = `User ID mismatch! Booking: ${bookingRecord.user_id}, Session: ${session.user?.id}`;
-        console.error('CRITICAL: ' + errorMsg);
-        alert('Authentication Error: ' + errorMsg);
-        throw new Error(errorMsg);
-      }
-
-      const apiEndpoint = `${targetUrl}/rest/v1/bookings`;
+      const endpoint = `${targetUrl}/rest/v1/bookings`;
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-      console.log('=== ENVIRONMENT VARIABLE CHECK ===');
-      console.log('VITE_SUPABASE_URL:', import.meta.env.VITE_SUPABASE_URL);
-      console.log('VITE_SUPABASE_ANON_KEY (first 20):', anonKey?.substring(0, 20) + '...');
+      console.log('TESTING URL:', endpoint);
+      console.log('Using ANON KEY only (NO Authorization header)');
+      console.log('Anon key (first 30 chars):', anonKey?.substring(0, 30) + '...');
 
-      console.log('=== NATIVE FETCH START ===');
-      console.log('Endpoint:', apiEndpoint);
-      console.log('Method: POST');
-      console.log('Timeout: 4 seconds');
-      console.log('Authorization: Bearer <session.access_token>');
-      console.log('API Key: <VITE_SUPABASE_ANON_KEY>');
-
-      const response = await fetch(apiEndpoint, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         signal: controller.signal,
         headers: {
           'apikey': anonKey,
-          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
-          'Prefer': 'return=minimal',
         },
         body: JSON.stringify(bookingRecord),
       });
 
       clearTimeout(timeoutId);
 
-      console.log('--- NATIVE FETCH RESPONSE RECEIVED ---');
+      console.log('--- FETCH COMPLETE ---');
       console.log('Response Status:', response.status);
       console.log('Response OK:', response.ok);
-      console.log('Response Headers:', Object.fromEntries(response.headers.entries()));
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('=== DATABASE ERROR (RLS VIOLATION?) ===');
+        console.error('=== SERVER ERROR ===');
         console.error('HTTP Status:', response.status);
-        console.error('Status Text:', response.statusText);
-        console.error('Full Error Body:', errorText);
-        console.error('Response Headers:', Object.fromEntries(response.headers.entries()));
+        console.error('SERVER RESPONSE:', errorText);
 
-        let errorMessage = 'Database insert failed';
-        let errorDetails = {};
-
-        try {
-          errorDetails = JSON.parse(errorText);
-          console.error('Parsed Error JSON:', errorDetails);
-          errorMessage = errorDetails.message || errorDetails.error || errorDetails.hint || errorText;
-        } catch {
-          console.error('Error response is not JSON, raw text:', errorText);
-          errorMessage = errorText || `HTTP ${response.status}`;
-        }
-
-        if (response.status === 401 || errorText.includes('42501')) {
-          console.error('=== RLS POLICY VIOLATION DETECTED ===');
-          console.error('This is a Row Level Security issue');
-          console.error('The session token may not have permission to insert into bookings table');
-          console.error('Booking record being inserted:', bookingRecord);
-          console.error('Session user ID:', session?.user?.id);
-          console.error('DEBUG SUGGESTION: Check if RLS policies allow INSERT for authenticated users');
-          errorMessage = `RLS Error (401/42501): ${errorMessage}. Check console for details.`;
-        }
-
-        alert('Database Error: ' + errorMessage);
-        throw new Error(errorMessage);
+        alert('Database Error: ' + errorText);
+        throw new Error(errorText);
       }
 
       console.log('=== BOOKING SAVED SUCCESSFULLY (NATIVE FETCH) ===');
