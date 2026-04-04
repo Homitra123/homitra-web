@@ -98,38 +98,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signIn = async (email: string, password: string) => {
-    // Bypass for Razorpay testing
-    if (email === 'test@razorpay.com' && password === '123456') {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: 'test@razorpay.com',
-        password: '123456',
-      });
-
-      // If user doesn't exist, create it
-      if (error?.message?.includes('Invalid login credentials')) {
-        const { error: signUpError } = await supabase.auth.signUp({
-          email: 'test@razorpay.com',
-          password: '123456',
-          options: {
-            data: {
-              full_name: 'Razorpay Test User',
-            },
-          },
-        });
-
-        if (!signUpError) {
-          // Sign in after creating
-          return await supabase.auth.signInWithPassword({
-            email: 'test@razorpay.com',
-            password: '123456',
-          });
-        }
-        return { error: signUpError };
-      }
-
-      return { error };
-    }
-
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -150,35 +118,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signInWithPhone = async (phone: string, otp: string) => {
-    if (phone === '9999999999' && otp === '123456') {
-      const testUserId = 'a5b9e4e0-cbe7-4fb2-938a-dd4273cdca18';
-
-      const mockUser = {
-        id: testUserId,
-        email: 'reviewer@razorpay.com',
-        phone: '9999999999',
-        user_metadata: { full_name: 'Razorpay Reviewer' },
-        app_metadata: {},
-        aud: 'authenticated',
-        created_at: new Date().toISOString(),
-      } as User;
-
-      const mockProfile: Profile = {
-        id: testUserId,
-        full_name: 'Razorpay Reviewer',
-        email: 'reviewer@razorpay.com',
-        phone: '9999999999',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      setUser(mockUser);
-      setProfile(mockProfile);
-
-      return { error: null };
-    }
-
-    return { error: new Error('Invalid phone number or OTP') as AuthError };
+    return { error: new Error('Phone authentication not yet implemented') as AuthError };
   };
 
   const signOut = async () => {
