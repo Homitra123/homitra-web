@@ -43,8 +43,11 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
   }, []);
 
   const completeBooking = async (razorpayPaymentId: string) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
     try {
-      console.log('=== STARTING BOOKING SAVE TO SUPABASE ===');
+      console.log('=== STARTING BOOKING SAVE (NATIVE FETCH BYPASS) ===');
       console.log('Razorpay Payment ID received:', razorpayPaymentId);
       console.log('User ID:', user?.id);
       console.log('User email:', user?.email);
@@ -87,77 +90,95 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
         throw new Error(errorMsg);
       }
 
-      const cleanedDates = Array.isArray(bookingData.dates)
-        ? bookingData.dates.filter((d: any) => typeof d === 'string')
-        : [String(bookingData.date)];
-
-      const cleanedWeekdays = Array.isArray(bookingData.weekdays)
-        ? bookingData.weekdays.filter((w: any) => typeof w === 'string')
-        : [];
-
       const bookingRecord = {
         user_id: String(user.id),
         service_id: String(bookingData.serviceId),
         service_name: String(bookingData.serviceName),
         tier: String(bookingData.tier || 'Standard'),
-        booking_mode: String(bookingData.bookingMode || 'single'),
-        duration: String(bookingData.duration || '60 min'),
         date: String(bookingData.date),
-        dates: cleanedDates,
-        weekdays: cleanedWeekdays,
         time_slot: String(bookingData.timeSlot),
-        flexible_bookings: bookingData.flexibleBookings || null,
         location: String(bookingData.location),
-        address: String(bookingData.address || ''),
-        price: Number(amount),
-        visits: Number(bookingData.visits || 1),
-        status: 'confirmed',
         payment_id: String(razorpayPaymentId),
+        booking_mode: String(bookingData.bookingMode || 'single'),
       };
 
-      console.log('FINAL DATA OBJECT (all primitives):', bookingRecord);
-      console.log('=== DIRECT INSERT TO:', `${targetUrl}/rest/v1/bookings`);
-      console.log('=== ATTEMPTING SUPABASE INSERT WITH 5 SECOND TIMEOUT ===');
+      console.log('SANITIZED DATA OBJECT (verified columns only):', bookingRecord);
 
-      const insertPromise = supabase
-        .from('bookings')
-        .insert([bookingRecord])
-        .select()
-        .single();
+      const apiEndpoint = `${targetUrl}/rest/v1/bookings`;
+      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Database Connection Timeout - Possible Browser Block')), 5000)
-      );
+      console.log('--- NATIVE FETCH START ---');
+      console.log('Endpoint:', apiEndpoint);
+      console.log('Method: POST');
+      console.log('Timeout: 4 seconds');
 
-      const response = await Promise.race([insertPromise, timeoutPromise]) as any;
+      const response = await fetch(apiEndpoint, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'apikey': anonKey,
+          'Authorization': `Bearer ${anonKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify(bookingRecord),
+      });
 
-      console.log('=== SUPABASE RESPONSE RECEIVED ===');
-      console.log('Supabase Response:', response);
+      clearTimeout(timeoutId);
 
-      if (response.error) {
-        console.error('=== SUPABASE ERROR ===');
-        console.error('Error code:', response.error.code);
-        console.error('Error message:', response.error.message);
-        console.error('Error details:', JSON.stringify(response.error, null, 2));
-        alert('Database Error: ' + response.error.message);
-        throw response.error;
+      console.log('--- NATIVE FETCH RESPONSE RECEIVED ---');
+      console.log('Response Status:', response.status);
+      console.log('Response OK:', response.ok);
+      console.log('Response Headers:', Object.fromEntries(response.headers.entries()));
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('=== DATABASE ERROR ===');
+        console.error('Status:', response.status);
+        console.error('Error Body:', errorText);
+
+        let errorMessage = 'Database insert failed';
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.message || errorJson.error || errorText;
+        } catch {
+          errorMessage = errorText || `HTTP ${response.status}`;
+        }
+
+        alert('Database Error: ' + errorMessage);
+        throw new Error(errorMessage);
       }
 
-      console.log('=== BOOKING SAVED SUCCESSFULLY ===');
-      console.log('Booking ID:', response.data?.id);
-      return response.data;
+      console.log('=== BOOKING SAVED SUCCESSFULLY (NATIVE FETCH) ===');
+
+      const insertedData = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('payment_id', razorpayPaymentId)
+        .maybeSingle();
+
+      if (insertedData.data) {
+        console.log('Booking ID retrieved:', insertedData.data.id);
+        return insertedData.data;
+      }
+
+      return { id: null };
     } catch (error: any) {
+      clearTimeout(timeoutId);
+
       console.error('=== COMPLETE BOOKING ERROR ===');
       console.error('Error type:', typeof error);
+      console.error('Error name:', error?.name);
       console.error('Error message:', error?.message);
       console.error('Full error:', error);
 
-      if (!error.message) {
+      if (error.name === 'AbortError') {
+        alert('Network Blocked: Please try a different internet connection or disable VPN.');
+        throw new Error('Request timeout - possible network block');
+      } else if (!error.message) {
         alert('Database Connection Failed: Unknown error occurred');
-      } else if (error.message.includes('Timeout') || error.message.includes('Browser Block')) {
-        alert('Database Connection Timeout - Possible Browser Block. Check console for Mixed Content errors.');
       } else if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
-        alert('Database Connection Failed: Unable to connect to database. Check your internet connection.');
+        alert('Network Blocked: Please try a different internet connection or disable VPN.');
       } else if (error.message.includes('CORS')) {
         alert('Database Connection Failed: CORS policy error. Check browser console.');
       } else {
