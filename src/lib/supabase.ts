@@ -8,19 +8,28 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 if (!supabaseUrl.startsWith('https://')) {
-  throw new Error(`Supabase URL must use HTTPS for security. Received: ${supabaseUrl}`);
+  throw new Error(`Insecure URL detected. Supabase URL must use HTTPS. Received: ${supabaseUrl}`);
 }
 
-console.log('Supabase client initialized with URL:', supabaseUrl);
+if (supabaseUrl.includes(':54321') || supabaseUrl.includes('localhost') || supabaseUrl.includes('127.0.0.1')) {
+  throw new Error(`Local development URL detected. Production requires remote HTTPS URL. Received: ${supabaseUrl}`);
+}
+
+const cleanUrl = supabaseUrl.replace(/:\d+$/, '');
+
+console.log('Supabase client initialized with URL:', cleanUrl);
 console.log('Using ANON key:', supabaseAnonKey.substring(0, 20) + '...');
 
 export const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL as string,
-  import.meta.env.VITE_SUPABASE_ANON_KEY as string,
+  cleanUrl,
+  supabaseAnonKey,
   {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
+    },
+    global: {
+      fetch: window.fetch.bind(window),
     },
   }
 );

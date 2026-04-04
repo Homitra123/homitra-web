@@ -49,6 +49,10 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
       console.log('User ID:', user?.id);
       console.log('User email:', user?.email);
 
+      if (!import.meta.env.VITE_SUPABASE_URL.startsWith('https://')) {
+        throw new Error('Insecure URL detected - aborting database operation');
+      }
+
       if (!user?.id) {
         const errorMsg = 'User is not authenticated';
         console.error(errorMsg);
@@ -77,34 +81,49 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
         throw new Error(errorMsg);
       }
 
+      const cleanedDates = Array.isArray(bookingData.dates)
+        ? bookingData.dates.filter((d: any) => typeof d === 'string')
+        : [String(bookingData.date)];
+
+      const cleanedWeekdays = Array.isArray(bookingData.weekdays)
+        ? bookingData.weekdays.filter((w: any) => typeof w === 'string')
+        : [];
+
       const bookingRecord = {
-        user_id: user.id,
-        service_id: bookingData.serviceId,
-        service_name: bookingData.serviceName,
-        tier: bookingData.tier || 'Standard',
-        booking_mode: bookingData.bookingMode || 'single',
-        duration: bookingData.duration || '60 min',
-        date: bookingData.date,
-        dates: bookingData.dates || [bookingData.date],
-        weekdays: bookingData.weekdays || [],
-        time_slot: bookingData.timeSlot,
+        user_id: String(user.id),
+        service_id: String(bookingData.serviceId),
+        service_name: String(bookingData.serviceName),
+        tier: String(bookingData.tier || 'Standard'),
+        booking_mode: String(bookingData.bookingMode || 'single'),
+        duration: String(bookingData.duration || '60 min'),
+        date: String(bookingData.date),
+        dates: cleanedDates,
+        weekdays: cleanedWeekdays,
+        time_slot: String(bookingData.timeSlot),
         flexible_bookings: bookingData.flexibleBookings || null,
-        location: bookingData.location,
-        address: bookingData.address,
-        price: amount,
-        visits: bookingData.visits || 1,
+        location: String(bookingData.location),
+        address: String(bookingData.address || ''),
+        price: Number(amount),
+        visits: Number(bookingData.visits || 1),
         status: 'confirmed',
-        payment_id: razorpayPaymentId,
+        payment_id: String(razorpayPaymentId),
       };
 
       console.log('FINAL DATA OBJECT:', bookingRecord);
-      console.log('=== ATTEMPTING SUPABASE INSERT ===');
+      console.log('Data types validated - all primitives');
+      console.log('=== ATTEMPTING SUPABASE INSERT WITH 5 SECOND TIMEOUT ===');
 
-      const response = await supabase
+      const insertPromise = supabase
         .from('bookings')
         .insert([bookingRecord])
         .select()
         .single();
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Database Connection Timeout - Possible Browser Block')), 5000)
+      );
+
+      const response = await Promise.race([insertPromise, timeoutPromise]) as any;
 
       console.log('=== SUPABASE RESPONSE RECEIVED ===');
       console.log('Supabase Response:', response);
@@ -129,6 +148,8 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
 
       if (!error.message) {
         alert('Database Connection Failed: Unknown error occurred');
+      } else if (error.message.includes('Timeout') || error.message.includes('Browser Block')) {
+        alert('Database Connection Timeout - Possible Browser Block. Check console for Mixed Content errors.');
       } else if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
         alert('Database Connection Failed: Unable to connect to database. Check your internet connection.');
       } else if (error.message.includes('CORS')) {
