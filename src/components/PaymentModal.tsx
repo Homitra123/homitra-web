@@ -104,6 +104,14 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
 
       console.log('SANITIZED DATA OBJECT (verified columns only):', bookingRecord);
 
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        throw new Error('No active session found. Please log in again.');
+      }
+
+      console.log('Session token retrieved:', session.access_token.substring(0, 20) + '...');
+
       const apiEndpoint = `${targetUrl}/rest/v1/bookings`;
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -111,13 +119,14 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
       console.log('Endpoint:', apiEndpoint);
       console.log('Method: POST');
       console.log('Timeout: 4 seconds');
+      console.log('Using session token for Authorization');
 
       const response = await fetch(apiEndpoint, {
         method: 'POST',
         signal: controller.signal,
         headers: {
           'apikey': anonKey,
-          'Authorization': `Bearer ${anonKey}`,
+          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
           'Prefer': 'return=minimal',
         },
