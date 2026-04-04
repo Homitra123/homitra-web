@@ -23,6 +23,9 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
 
+  console.log('PaymentModal initialized with booking data:', bookingData);
+  console.log('Amount:', amount);
+
   useEffect(() => {
     const script = document.createElement('script');
     script.src = 'https://checkout.razorpay.com/v1/checkout.js';
@@ -39,67 +42,105 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
     };
   }, []);
 
-  const completeBooking = async (paymentId: string) => {
-    console.log('Starting booking save to Supabase...');
+  const completeBooking = async (razorpayPaymentId: string) => {
+    try {
+      console.log('=== STARTING BOOKING SAVE TO SUPABASE ===');
+      console.log('Razorpay Payment ID received:', razorpayPaymentId);
+      console.log('User ID:', user?.id);
+      console.log('User email:', user?.email);
 
-    if (!bookingData.date) {
-      const errorMsg = 'Missing required field: date';
-      console.error(errorMsg);
-      alert('Database Error: ' + errorMsg);
-      throw new Error(errorMsg);
+      if (!user?.id) {
+        const errorMsg = 'User is not authenticated';
+        console.error(errorMsg);
+        alert('Authentication Error: ' + errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      if (!bookingData.date) {
+        const errorMsg = 'Missing required field: date';
+        console.error(errorMsg);
+        alert('Database Error: ' + errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      if (!bookingData.timeSlot) {
+        const errorMsg = 'Missing required field: timeSlot';
+        console.error(errorMsg);
+        alert('Database Error: ' + errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      if (!bookingData.location) {
+        const errorMsg = 'Missing required field: location';
+        console.error(errorMsg);
+        alert('Database Error: ' + errorMsg);
+        throw new Error(errorMsg);
+      }
+
+      const bookingRecord = {
+        user_id: user.id,
+        service_id: bookingData.serviceId,
+        service_name: bookingData.serviceName,
+        tier: bookingData.tier || 'Standard',
+        booking_mode: bookingData.bookingMode || 'single',
+        duration: bookingData.duration || '60 min',
+        date: bookingData.date,
+        dates: bookingData.dates || [bookingData.date],
+        weekdays: bookingData.weekdays || [],
+        time_slot: bookingData.timeSlot,
+        flexible_bookings: bookingData.flexibleBookings || null,
+        location: bookingData.location,
+        address: bookingData.address,
+        price: amount,
+        visits: bookingData.visits || 1,
+        status: 'confirmed',
+        payment_id: razorpayPaymentId,
+      };
+
+      console.log('FINAL DATA OBJECT:', bookingRecord);
+      console.log('=== ATTEMPTING SUPABASE INSERT ===');
+
+      const response = await supabase
+        .from('bookings')
+        .insert([bookingRecord])
+        .select()
+        .single();
+
+      console.log('=== SUPABASE RESPONSE RECEIVED ===');
+      console.log('Supabase Response:', response);
+
+      if (response.error) {
+        console.error('=== SUPABASE ERROR ===');
+        console.error('Error code:', response.error.code);
+        console.error('Error message:', response.error.message);
+        console.error('Error details:', JSON.stringify(response.error, null, 2));
+        alert('Database Error: ' + response.error.message);
+        throw response.error;
+      }
+
+      console.log('=== BOOKING SAVED SUCCESSFULLY ===');
+      console.log('Booking ID:', response.data?.id);
+      return response.data;
+    } catch (error: any) {
+      console.error('=== COMPLETE BOOKING ERROR ===');
+      console.error('Error type:', typeof error);
+      console.error('Error message:', error?.message);
+      console.error('Full error:', error);
+
+      if (!error.message) {
+        alert('Database Connection Failed: Unknown error occurred');
+      } else if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
+        alert('Database Connection Failed: Unable to connect to database. Check your internet connection.');
+      } else if (error.message.includes('CORS')) {
+        alert('Database Connection Failed: CORS policy error. Check browser console.');
+      } else {
+        alert('Database Connection Failed: ' + error.message);
+      }
+
+      throw error;
+    } finally {
+      console.log('=== COMPLETE BOOKING FUNCTION FINISHED ===');
     }
-
-    if (!bookingData.timeSlot) {
-      const errorMsg = 'Missing required field: timeSlot';
-      console.error(errorMsg);
-      alert('Database Error: ' + errorMsg);
-      throw new Error(errorMsg);
-    }
-
-    if (!bookingData.location) {
-      const errorMsg = 'Missing required field: location';
-      console.error(errorMsg);
-      alert('Database Error: ' + errorMsg);
-      throw new Error(errorMsg);
-    }
-
-    const bookingRecord = {
-      user_id: user!.id,
-      service_id: bookingData.serviceId,
-      service_name: bookingData.serviceName,
-      tier: bookingData.tier || 'Standard',
-      booking_mode: bookingData.bookingMode || 'single',
-      duration: bookingData.duration || '60 min',
-      date: bookingData.date,
-      dates: bookingData.dates || [bookingData.date],
-      weekdays: bookingData.weekdays || [],
-      time_slot: bookingData.timeSlot,
-      flexible_bookings: bookingData.flexibleBookings || null,
-      location: bookingData.location,
-      address: bookingData.address,
-      price: amount,
-      visits: bookingData.visits || 1,
-      status: 'confirmed',
-      payment_id: paymentId,
-    };
-
-    console.log('Booking data being inserted:', bookingRecord);
-
-    const { data: insertedBooking, error: insertError } = await supabase
-      .from('bookings')
-      .insert([bookingRecord])
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error('Supabase Error:', insertError);
-      console.error('Error details:', JSON.stringify(insertError, null, 2));
-      alert('Database Error: ' + insertError.message);
-      throw insertError;
-    }
-
-    console.log('Booking saved successfully:', insertedBooking);
-    return insertedBooking;
   };
 
   const handlePayment = async () => {
@@ -125,26 +166,27 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
         description: bookingData.serviceName,
         image: '/Home_Assiatnt_Pic.png',
         handler: async function (response: any) {
-          console.log('Payment successful:', response);
+          console.log('=== PAYMENT SUCCESSFUL ===');
+          console.log('Payment response:', response);
           console.log('Razorpay Payment ID:', response.razorpay_payment_id);
 
           try {
             const booking = await completeBooking(response.razorpay_payment_id);
 
             if (booking && booking.id) {
-              console.log('Database confirmed. Navigation to success page with booking ID:', booking.id);
-              setIsProcessing(false);
+              console.log('Database confirmed. Navigating to success page with booking ID:', booking.id);
               navigate(`/booking-success?booking_id=${booking.id}`, { replace: true });
             } else {
               console.warn('Booking created but no ID returned, navigating to bookings page');
-              setIsProcessing(false);
               navigate('/bookings', { replace: true });
             }
           } catch (err: any) {
-            console.error('Error completing booking:', err);
-            setError('Payment successful but failed to save booking. Please contact support.');
-            setIsProcessing(false);
+            console.error('=== ERROR COMPLETING BOOKING ===');
+            console.error('Error:', err);
+            setError('Payment successful but failed to save booking. Please contact support with payment ID: ' + response.razorpay_payment_id);
           } finally {
+            console.log('=== PAYMENT HANDLER CLEANUP ===');
+            setIsProcessing(false);
             onClose();
           }
         },
