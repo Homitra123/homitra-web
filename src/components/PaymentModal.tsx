@@ -41,42 +41,60 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
 
   const completeBooking = async (paymentId: string) => {
     console.log('Starting booking save to Supabase...');
-    console.log('Booking data:', {
+
+    if (!bookingData.date) {
+      const errorMsg = 'Missing required field: date';
+      console.error(errorMsg);
+      alert('Database Error: ' + errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    if (!bookingData.timeSlot) {
+      const errorMsg = 'Missing required field: timeSlot';
+      console.error(errorMsg);
+      alert('Database Error: ' + errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    if (!bookingData.location) {
+      const errorMsg = 'Missing required field: location';
+      console.error(errorMsg);
+      alert('Database Error: ' + errorMsg);
+      throw new Error(errorMsg);
+    }
+
+    const bookingRecord = {
       user_id: user!.id,
       service_id: bookingData.serviceId,
       service_name: bookingData.serviceName,
+      tier: bookingData.tier || 'Standard',
+      booking_mode: bookingData.bookingMode || 'single',
+      duration: bookingData.duration || '60 min',
+      date: bookingData.date,
+      dates: bookingData.dates || [bookingData.date],
+      weekdays: bookingData.weekdays || [],
+      time_slot: bookingData.timeSlot,
+      flexible_bookings: bookingData.flexibleBookings || null,
+      location: bookingData.location,
+      address: bookingData.address,
+      price: amount,
+      visits: bookingData.visits || 1,
+      status: 'confirmed',
       payment_id: paymentId,
-    });
+    };
+
+    console.log('Booking data being inserted:', bookingRecord);
 
     const { data: insertedBooking, error: insertError } = await supabase
       .from('bookings')
-      .insert([
-        {
-          user_id: user!.id,
-          service_id: bookingData.serviceId,
-          service_name: bookingData.serviceName,
-          tier: bookingData.tier || 'Standard',
-          booking_mode: bookingData.bookingMode || 'single',
-          duration: bookingData.duration || '60 min',
-          date: bookingData.date,
-          dates: bookingData.dates || [bookingData.date],
-          weekdays: bookingData.weekdays || [],
-          time_slot: bookingData.timeSlot,
-          flexible_bookings: bookingData.flexibleBookings || null,
-          location: bookingData.location,
-          address: bookingData.address,
-          price: amount,
-          visits: bookingData.visits || 1,
-          status: 'confirmed',
-          payment_id: paymentId,
-        }
-      ])
+      .insert([bookingRecord])
       .select()
       .single();
 
     if (insertError) {
       console.error('Supabase Error:', insertError);
       console.error('Error details:', JSON.stringify(insertError, null, 2));
+      alert('Database Error: ' + insertError.message);
       throw insertError;
     }
 
@@ -114,17 +132,19 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
             const booking = await completeBooking(response.razorpay_payment_id);
 
             if (booking && booking.id) {
-              console.log('Navigation to success page with booking ID:', booking.id);
+              console.log('Database confirmed. Navigation to success page with booking ID:', booking.id);
+              setIsProcessing(false);
               navigate(`/booking-success?booking_id=${booking.id}`, { replace: true });
             } else {
               console.warn('Booking created but no ID returned, navigating to bookings page');
+              setIsProcessing(false);
               navigate('/bookings', { replace: true });
             }
           } catch (err: any) {
             console.error('Error completing booking:', err);
             setError('Payment successful but failed to save booking. Please contact support.');
-          } finally {
             setIsProcessing(false);
+          } finally {
             onClose();
           }
         },
