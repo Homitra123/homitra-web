@@ -39,37 +39,49 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
     };
   }, []);
 
-  const completeBooking = async () => {
+  const completeBooking = async (paymentId: string) => {
+    console.log('Starting booking save to Supabase...');
+    console.log('Booking data:', {
+      user_id: user!.id,
+      service_id: bookingData.serviceId,
+      service_name: bookingData.serviceName,
+      payment_id: paymentId,
+    });
+
     const { data: insertedBooking, error: insertError } = await supabase
       .from('bookings')
-      .insert({
-        user_id: user!.id,
-        service_id: bookingData.serviceId,
-        service_name: bookingData.serviceName,
-        tier: bookingData.tier || 'Standard',
-        booking_mode: bookingData.bookingMode || 'single',
-        duration: bookingData.duration || '60 min',
-        date: bookingData.date,
-        dates: bookingData.dates || [bookingData.date],
-        weekdays: bookingData.weekdays || [],
-        time_slot: bookingData.timeSlot,
-        flexible_bookings: bookingData.flexibleBookings || null,
-        location: bookingData.location,
-        address: bookingData.address,
-        price: amount,
-        visits: bookingData.visits || 1,
-        status: 'confirmed',
-      })
+      .insert([
+        {
+          user_id: user!.id,
+          service_id: bookingData.serviceId,
+          service_name: bookingData.serviceName,
+          tier: bookingData.tier || 'Standard',
+          booking_mode: bookingData.bookingMode || 'single',
+          duration: bookingData.duration || '60 min',
+          date: bookingData.date,
+          dates: bookingData.dates || [bookingData.date],
+          weekdays: bookingData.weekdays || [],
+          time_slot: bookingData.timeSlot,
+          flexible_bookings: bookingData.flexibleBookings || null,
+          location: bookingData.location,
+          address: bookingData.address,
+          price: amount,
+          visits: bookingData.visits || 1,
+          status: 'confirmed',
+          payment_id: paymentId,
+        }
+      ])
       .select()
       .single();
 
     if (insertError) {
-      console.error('Error saving booking:', insertError);
+      console.error('Supabase Error:', insertError);
+      console.error('Error details:', JSON.stringify(insertError, null, 2));
       throw insertError;
     }
 
-    onClose();
-    navigate(insertedBooking?.id ? `/booking-success?booking_id=${insertedBooking.id}` : '/bookings', { replace: true });
+    console.log('Booking saved successfully:', insertedBooking);
+    return insertedBooking;
   };
 
   const handlePayment = async () => {
@@ -96,12 +108,24 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
         image: '/Home_Assiatnt_Pic.png',
         handler: async function (response: any) {
           console.log('Payment successful:', response);
+          console.log('Razorpay Payment ID:', response.razorpay_payment_id);
+
           try {
-            await completeBooking();
+            const booking = await completeBooking(response.razorpay_payment_id);
+
+            if (booking && booking.id) {
+              console.log('Navigation to success page with booking ID:', booking.id);
+              navigate(`/booking-success?booking_id=${booking.id}`, { replace: true });
+            } else {
+              console.warn('Booking created but no ID returned, navigating to bookings page');
+              navigate('/bookings', { replace: true });
+            }
           } catch (err: any) {
             console.error('Error completing booking:', err);
             setError('Payment successful but failed to save booking. Please contact support.');
+          } finally {
             setIsProcessing(false);
+            onClose();
           }
         },
         prefill: {

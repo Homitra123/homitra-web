@@ -63,7 +63,7 @@ export const services: Service[] = [
       {
         id: 'express-exterior',
         name: 'Express Exterior Wash',
-        price: 149,
+        price: 1,
         duration: '45 minutes',
         description: 'A quick, effective refresh for your vehicle\'s exterior, perfect for regular maintenance.',
         features: [],
