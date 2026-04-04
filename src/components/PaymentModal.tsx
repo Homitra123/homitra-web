@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../lib/supabase';
+import { supabase, getSupabaseUrl } from '../lib/supabase';
 
 declare global {
   interface Window {
@@ -49,7 +49,13 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
       console.log('User ID:', user?.id);
       console.log('User email:', user?.email);
 
-      if (!import.meta.env.VITE_SUPABASE_URL.startsWith('https://')) {
+      const targetUrl = getSupabaseUrl();
+      console.log('=== TARGET DATABASE URL ===');
+      console.log('Using Supabase URL:', targetUrl);
+      console.log('URL is HTTPS:', targetUrl.startsWith('https://'));
+      console.log('URL has no port:', !targetUrl.match(/:\d+$/));
+
+      if (!targetUrl.startsWith('https://')) {
         throw new Error('Insecure URL detected - aborting database operation');
       }
 
@@ -109,8 +115,8 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
         payment_id: String(razorpayPaymentId),
       };
 
-      console.log('FINAL DATA OBJECT:', bookingRecord);
-      console.log('Data types validated - all primitives');
+      console.log('FINAL DATA OBJECT (all primitives):', bookingRecord);
+      console.log('=== DIRECT INSERT TO:', `${targetUrl}/rest/v1/bookings`);
       console.log('=== ATTEMPTING SUPABASE INSERT WITH 5 SECOND TIMEOUT ===');
 
       const insertPromise = supabase
