@@ -59,34 +59,32 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
 
       const bookingRecord = {
         user_id: user.id,
-        service_id: String(bookingData.serviceId),
-        service_name: String(bookingData.serviceName),
-        tier: String(bookingData.tier || 'Standard'),
-        booking_mode: String(bookingData.bookingMode || 'single'),
-        duration: String(bookingData.duration || '1 hour'),
-        date: String(bookingData.date),
-        time_slot: String(bookingData.timeSlot),
-        location: String(bookingData.location),
-        address: String(bookingData.address || bookingData.location),
+        service_id: bookingData.serviceId,
+        service_name: bookingData.serviceName,
+        tier: bookingData.tier || 'Standard',
+        booking_mode: bookingData.bookingMode || 'single',
+        duration: bookingData.duration || '1 hour',
+        date: bookingData.date,
+        time_slot: bookingData.timeSlot,
+        location: bookingData.location,
+        address: bookingData.address || bookingData.location,
         price: amount,
-        status: 'confirmed',
-        payment_id: String(razorpayPaymentId),
+        status: 'pending',
+        payment_id: razorpayPaymentId,
       };
 
       console.log('Booking record:', bookingRecord);
 
-      const timestamp = Date.now();
-      const endpoint = `https://talcyiifgehpcphwotej.supabase.co/rest/v1/bookings?t=${timestamp}`;
+      const endpoint = 'https://talcyiifgehpcphwotej.supabase.co/rest/v1/bookings';
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-      console.log('HARDCODED HTTPS ENDPOINT:', endpoint);
+      console.log('Supabase endpoint:', endpoint);
 
       fetch(endpoint, {
         method: 'POST',
-        mode: 'cors',
-        referrerPolicy: 'no-referrer-when-downgrade',
         headers: {
           'apikey': anonKey,
+          'Authorization': `Bearer ${anonKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(bookingRecord),
@@ -103,8 +101,8 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
         console.error('Background insert error:', err);
       });
 
-      console.log('Fire-and-forget request sent. Waiting 500ms before redirect...');
-      await new Promise(resolve => setTimeout(resolve, 500));
+      console.log('Fire-and-forget request sent. Waiting 1 second before redirect...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       return { success: true };
     } catch (error: any) {
@@ -140,17 +138,14 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
           console.log('Payment response:', response);
           console.log('Razorpay Payment ID:', response.razorpay_payment_id);
 
-          const result = await completeBooking(response.razorpay_payment_id);
+          await completeBooking(response.razorpay_payment_id);
 
-          console.log('Booking result:', result);
           console.log('Redirecting to success page...');
 
           setIsProcessing(false);
           onClose();
 
-          setTimeout(() => {
-            navigate('/booking-success', { replace: true });
-          }, 100);
+          navigate('/booking-success', { replace: true });
         },
         prefill: {
           name: profile.full_name || '',
