@@ -19,62 +19,93 @@ const BookingSuccess = () => {
   const navigate = useNavigate();
   const [booking, setBooking] = useState<BookingDetails | null>(null);
   const [loading, setLoading] = useState(true);
+  const [retryCount, setRetryCount] = useState(0);
+  const [showEmptyState, setShowEmptyState] = useState(false);
+
+  const fetchBooking = async () => {
+    const bookingId = searchParams.get('booking_id');
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        navigate('/login');
+        return;
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        navigate('/login');
+        return;
+      }
+
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      let url: string;
+      if (bookingId) {
+        url = `${supabaseUrl}/rest/v1/bookings?id=eq.${bookingId}&limit=1`;
+      } else {
+        url = `${supabaseUrl}/rest/v1/bookings?user_id=eq.${user.id}&order=created_at.desc&limit=1`;
+      }
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'apikey': supabaseAnonKey,
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        console.error('Error fetching booking:', response.status, response.statusText);
+        return null;
+      } else {
+        const data = await response.json();
+        if (data && data.length > 0) {
+          return data[0];
+        } else {
+          console.log('No booking found yet, attempt:', retryCount + 1);
+          return null;
+        }
+      }
+    } catch (err) {
+      console.error('Error:', err);
+      return null;
+    }
+  };
 
   useEffect(() => {
-    const fetchBooking = async () => {
-      const bookingId = searchParams.get('booking_id');
+    const attemptFetch = async () => {
+      setLoading(true);
+      const result = await fetchBooking();
 
-      try {
-        let data, error;
-
-        if (bookingId) {
-          const result = await supabase
-            .from('bookings')
-            .select('*')
-            .eq('id', bookingId)
-            .maybeSingle();
-          data = result.data;
-          error = result.error;
-        } else {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (!user) {
-            navigate('/login');
-            return;
-          }
-
-          const result = await supabase
-            .from('bookings')
-            .select('*')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          data = result.data;
-          error = result.error;
-        }
-
-        if (error || !data) {
-          console.error('Error fetching booking:', error);
-          console.log('No booking found, showing generic success message');
-          setBooking(null);
-        } else {
-          setBooking(data);
-        }
-      } catch (err) {
-        console.error('Error:', err);
-        setBooking(null);
-      } finally {
+      if (result) {
+        setBooking(result);
+        setLoading(false);
+      } else if (retryCount < 2) {
+        setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+        }, 1500);
+      } else {
+        setShowEmptyState(true);
         setLoading(false);
       }
     };
 
-    fetchBooking();
-  }, [searchParams, navigate]);
+    attemptFetch();
+  }, [retryCount, searchParams, navigate]);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-6 px-4">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 text-lg">Loading your booking details...</p>
+          {retryCount > 0 && (
+            <p className="text-gray-500 text-sm mt-2">Retry attempt {retryCount + 1} of 3</p>
+          )}
+        </div>
       </div>
     );
   }
@@ -101,8 +132,21 @@ const BookingSuccess = () => {
           <div className="p-8">
             {booking && (
               <div className="mb-6 pb-6 border-b border-gray-200">
-                <h2 className="text-sm font-semibold text-gray-500 uppercase mb-1">Booking ID</h2>
-                <p className="text-lg font-mono text-gray-900">{booking.id.slice(0, 13).toUpperCase()}</p>
+                <div className="flex justify-between items-start flex-wrap gap-4">
+                  <div>
+                    <h2 className="text-sm font-semibold text-gray-500 uppercase mb-1">Booking ID</h2>
+                    <p className="text-lg font-mono text-gray-900">{booking.id.slice(0, 13).toUpperCase()}</p>
+                  </div>
+                  <div className="text-right">
+                    <h2 className="text-sm font-semibold text-gray-500 uppercase mb-1">Booked On</h2>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {new Date(booking.created_at).toLocaleString('en-IN', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short'
+                      })}
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -164,13 +208,27 @@ const BookingSuccess = () => {
                   </div>
                 </div>
               </>
-            ) : (
-              <div className="mb-8">
-                <p className="text-center text-gray-600 text-lg">
-                  Your booking is being processed. You can view it in the Bookings section shortly.
-                </p>
+            ) : showEmptyState ? (
+              <div className="mb-8 text-center">
+                <div className="bg-blue-50 rounded-2xl p-8 mb-6">
+                  <CheckCircle size={64} className="text-blue-600 mx-auto mb-4" />
+                  <h3 className="text-xl font-bold text-gray-900 mb-3">Payment Confirmed!</h3>
+                  <p className="text-gray-700 text-lg mb-4">
+                    Your booking is being processed. You can check "My Bookings" in a moment.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setRetryCount(0);
+                      setShowEmptyState(false);
+                      setLoading(true);
+                    }}
+                    className="bg-blue-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+                  >
+                    Refresh to Load Details
+                  </button>
+                </div>
               </div>
-            )}
+            ) : null}
 
             <div className="bg-gray-50 rounded-2xl p-6 mb-6">
               <h4 className="font-semibold text-gray-900 mb-2">What's Next?</h4>
