@@ -112,33 +112,16 @@ const BookingSuccess = () => {
     };
   }, [retryCount, searchParams, navigate]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-6 px-4">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 text-lg">Loading your booking details...</p>
-          {retryCount > 0 && (
-            <p className="text-gray-500 text-sm mt-2">Retry attempt {retryCount + 1} of 3</p>
-          )}
-          {showEmergencyButton && (
-            <Link
-              to="/profile"
-              className="mt-6 inline-block bg-blue-600 text-white py-4 px-8 rounded-xl font-semibold hover:bg-blue-700 transition-colors text-lg shadow-lg"
-            >
-              View My Bookings Dashboard
-            </Link>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   const formattedDate = booking ? new Date(booking.date).toLocaleDateString('en-IN', {
     weekday: 'short',
     year: 'numeric',
     month: 'short',
     day: 'numeric'
+  }) : '';
+
+  const formattedTime = booking ? new Date(booking.created_at).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour12: true
   }) : '';
 
   return (
@@ -154,25 +137,28 @@ const BookingSuccess = () => {
           </div>
 
           <div className="p-8">
-            {booking && (
-              <div className="mb-6 pb-6 border-b border-gray-200">
-                <div className="flex justify-between items-start flex-wrap gap-4">
-                  <div>
-                    <h2 className="text-sm font-semibold text-gray-500 uppercase mb-1">Booking ID</h2>
-                    <p className="text-lg font-mono text-gray-900">{booking.id.slice(0, 13).toUpperCase()}</p>
-                  </div>
-                  <div className="text-right">
-                    <h2 className="text-sm font-semibold text-gray-500 uppercase mb-1">Booked On</h2>
-                    <p className="text-lg font-semibold text-gray-900">
-                      {new Date(booking.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true })} IST
-                    </p>
+            {loading ? (
+              <div className="mb-8 text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-600 text-lg">Loading your booking details...</p>
+              </div>
+            ) : booking ? (
+              <>
+                <div className="mb-6 pb-6 border-b border-gray-200">
+                  <div className="flex justify-between items-start flex-wrap gap-4">
+                    <div>
+                      <h2 className="text-sm font-semibold text-gray-500 uppercase mb-1">Booking ID</h2>
+                      <p className="text-lg font-mono text-gray-900">{booking.id.slice(0, 13).toUpperCase()}</p>
+                    </div>
+                    <div className="text-right">
+                      <h2 className="text-sm font-semibold text-gray-500 uppercase mb-1">Booked On</h2>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {formattedTime} IST
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
 
-            {booking ? (
-              <>
                 <div className="space-y-6 mb-8">
                   <div>
                     <h3 className="text-2xl font-bold text-gray-900 mb-6">Booking Details</h3>
@@ -190,7 +176,17 @@ const BookingSuccess = () => {
 
                   <div className="flex items-start gap-4">
                     <div className="w-12 h-12 bg-purple-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                      <Calendar className="text-purple-600" size={24} />
+                      <IndianRupee className="text-purple-600" size={24} />
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500 mb-1">Tier</p>
+                      <p className="text-lg font-semibold text-gray-900 capitalize">{booking.tier}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-orange-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <Calendar className="text-orange-600" size={24} />
                     </div>
                     <div>
                       <p className="text-sm text-gray-500 mb-1">Date</p>
@@ -199,22 +195,12 @@ const BookingSuccess = () => {
                   </div>
 
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-orange-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                      <Clock className="text-orange-600" size={24} />
+                    <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <Clock className="text-green-600" size={24} />
                     </div>
                     <div>
                       <p className="text-sm text-gray-500 mb-1">Time</p>
-                      <p className="text-lg font-semibold text-gray-900">{booking.time_slot}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-green-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                      <MapPin className="text-green-600" size={24} />
-                    </div>
-                    <div>
-                      <p className="text-sm text-gray-500 mb-1">Address</p>
-                      <p className="text-lg font-semibold text-gray-900">{booking.address}</p>
+                      <p className="text-lg font-semibold text-gray-900">{booking.time_slot} IST</p>
                     </div>
                   </div>
                 </div>
@@ -230,32 +216,9 @@ const BookingSuccess = () => {
                 </div>
               </>
             ) : (
-              <div className="mb-8 text-center">
-                <div className="bg-blue-50 rounded-2xl p-8 mb-6">
-                  <CheckCircle size={64} className="text-blue-600 mx-auto mb-4" />
-                  <h3 className="text-xl font-bold text-gray-900 mb-3">Payment Confirmed!</h3>
-                  <p className="text-gray-700 text-lg mb-6">
-                    Your booking is saved. You can see details in your Profile.
-                  </p>
-                  <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                    <button
-                      onClick={() => {
-                        setRetryCount(0);
-                        setShowEmergencyButton(false);
-                        setLoading(true);
-                      }}
-                      className="bg-blue-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
-                    >
-                      Refresh to Load Details
-                    </button>
-                    <Link
-                      to="/profile"
-                      className="inline-block bg-gray-100 text-gray-900 py-3 px-6 rounded-xl font-semibold hover:bg-gray-200 transition-colors"
-                    >
-                      View My Bookings Dashboard
-                    </Link>
-                  </div>
-                </div>
+              <div className="mb-8 text-center py-12">
+                <p className="text-gray-600 text-lg mb-4">Your booking details will appear here shortly.</p>
+                <p className="text-gray-500">Check your bookings dashboard to view all details.</p>
               </div>
             )}
 
@@ -278,19 +241,19 @@ const BookingSuccess = () => {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                onClick={() => navigate('/bookings')}
+              <Link
+                to="/profile"
                 className="flex-1 bg-blue-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
               >
                 <span>View My Bookings</span>
                 <ArrowRight size={20} />
-              </button>
-              <button
-                onClick={() => navigate('/')}
-                className="flex-1 bg-gray-100 text-gray-900 py-4 px-6 rounded-xl font-semibold hover:bg-gray-200 transition-colors"
+              </Link>
+              <Link
+                to="/"
+                className="flex-1 bg-gray-100 text-gray-900 py-4 px-6 rounded-xl font-semibold hover:bg-gray-200 transition-colors text-center"
               >
                 Back to Home
-              </button>
+              </Link>
             </div>
           </div>
         </div>
