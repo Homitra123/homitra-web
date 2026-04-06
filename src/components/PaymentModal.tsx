@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { supabase, getSupabaseUrl } from '../lib/supabase';
+import { supabase, getSupabaseUrl, getSupabaseAnonKey } from '../lib/supabase';
 
 declare global {
   interface Window {
@@ -75,10 +75,11 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
 
       console.log('Booking record:', bookingRecord);
 
-      const endpoint = 'https://talcyiifgehpcphwotej.supabase.co/rest/v1/bookings';
-      const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      const endpoint = `${getSupabaseUrl()}/rest/v1/bookings`;
+      const anonKey = getSupabaseAnonKey();
 
       console.log('Supabase endpoint:', endpoint);
+      console.log('[PaymentModal] Using hardcoded anon key:', anonKey.substring(0, 20) + '...');
 
       fetch(endpoint, {
         method: 'POST',

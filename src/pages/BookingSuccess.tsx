@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { CheckCircle, Calendar, Clock, MapPin, IndianRupee, ArrowRight } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase, getSupabaseUrl, getSupabaseAnonKey } from '../lib/supabase';
 
 interface BookingDetails {
   id: string;
@@ -39,11 +39,17 @@ const BookingSuccess = () => {
         return;
       }
 
+      const baseUrl = getSupabaseUrl();
+      const anonKey = getSupabaseAnonKey();
+
+      console.log('[BookingSuccess] Using hardcoded URL:', baseUrl);
+      console.log('[BookingSuccess] Using hardcoded anon key:', anonKey.substring(0, 20) + '...');
+
       let url: string;
       if (bookingId) {
-        url = `https://talcyiifgehpcphwotej.supabase.co/rest/v1/bookings?id=eq.${bookingId}&limit=1`;
+        url = `${baseUrl}/rest/v1/bookings?id=eq.${bookingId}&limit=1`;
       } else {
-        url = `https://talcyiifgehpcphwotej.supabase.co/rest/v1/bookings?user_id=eq.${user.id}&order=created_at.desc&limit=1`;
+        url = `${baseUrl}/rest/v1/bookings?user_id=eq.${user.id}&order=created_at.desc&limit=1`;
       }
 
       const response = await fetch(url, {
@@ -52,7 +58,7 @@ const BookingSuccess = () => {
         credentials: 'omit',
         referrerPolicy: 'no-referrer-when-downgrade',
         headers: {
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhbGN5aWlmZ2VocGNwaHdvdGVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM3NzY5MzcsImV4cCI6MjA1OTM1MjkzN30.Tds-TKDqrQKJXXdmXt_tYEKfXu4O0HfGkdM0JMqI8Qw',
+          'apikey': anonKey,
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },

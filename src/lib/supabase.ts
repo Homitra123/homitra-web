@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 const HARDCODED_URL = 'https://talcyiifgehpcphwotej.supabase.co';
-const HARDCODED_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhbGN5aWlmZ2VocGNwaHdvdGVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM3NzY5MzcsImV4cCI6MjA1OTM1MjkzN30.Tds-TKDqrQKJXXdmXt_tYEKfXu4O0HfGkdM0JMqI8Qw';
+const HARDCODED_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhbGN5aWlmZ2VocGNwaHdvdGVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMDIzNTksImV4cCI6MjA5MDY3ODM1OX0.fkq4NgKspCK5xoYakoEK93XCTxj1CYUeR845quadapc';
 
 console.log('[Supabase] Client initialized with hardcoded production URL:', HARDCODED_URL);
 console.log('[Supabase] Using ANON key:', HARDCODED_KEY.substring(0, 20) + '...');
