@@ -49,16 +49,16 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
 
       if (!user?.id) {
         console.error('User is not authenticated');
-        return { id: null };
+        return { success: false };
       }
 
       if (!bookingData.date || !bookingData.timeSlot || !bookingData.location) {
         console.error('Missing required booking fields');
-        return { id: null };
+        return { success: false };
       }
 
       const bookingRecord = {
-        user_id: String(user.id),
+        user_id: user.id,
         service_id: String(bookingData.serviceId),
         service_name: String(bookingData.serviceName),
         tier: String(bookingData.tier || 'Standard'),
@@ -68,7 +68,8 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
         time_slot: String(bookingData.timeSlot),
         location: String(bookingData.location),
         address: String(bookingData.address || bookingData.location),
-        price: Number(amount),
+        price: amount,
+        status: 'confirmed',
         payment_id: String(razorpayPaymentId),
       };
 
@@ -91,10 +92,12 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
         body: JSON.stringify(bookingRecord),
       }).then(response => {
         console.log('Background insert status:', response.status);
-        if (response.ok) {
-          console.log('✓ Booking saved successfully');
+        if (response.ok || response.status === 409) {
+          console.log('✓ Booking saved successfully (or already exists)');
         } else {
-          console.error('✗ Booking save failed');
+          response.text().then(text => {
+            console.error('✗ Booking save failed:', response.status, text);
+          });
         }
       }).catch(err => {
         console.error('Background insert error:', err);
@@ -103,10 +106,10 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
       console.log('Fire-and-forget request sent. Waiting 500ms before redirect...');
       await new Promise(resolve => setTimeout(resolve, 500));
 
-      return { id: null };
+      return { success: true };
     } catch (error: any) {
       console.error('Error preparing booking:', error);
-      return { id: null };
+      return { success: false };
     }
   };
 
@@ -137,12 +140,17 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
           console.log('Payment response:', response);
           console.log('Razorpay Payment ID:', response.razorpay_payment_id);
 
-          await completeBooking(response.razorpay_payment_id);
+          const result = await completeBooking(response.razorpay_payment_id);
 
+          console.log('Booking result:', result);
           console.log('Redirecting to success page...');
+
           setIsProcessing(false);
           onClose();
-          navigate('/booking-success', { replace: true });
+
+          setTimeout(() => {
+            navigate('/booking-success', { replace: true });
+          }, 100);
         },
         prefill: {
           name: profile.full_name || '',
