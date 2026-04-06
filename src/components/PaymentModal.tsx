@@ -43,51 +43,18 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
   }, []);
 
   const completeBooking = async (razorpayPaymentId: string) => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
-
     try {
-      console.log('=== STARTING BOOKING SAVE (NATIVE FETCH BYPASS) ===');
+      console.log('=== FIRE AND FORGET BOOKING SAVE ===');
       console.log('Razorpay Payment ID received:', razorpayPaymentId);
-      console.log('User ID:', user?.id);
-      console.log('User email:', user?.email);
-
-      const targetUrl = getSupabaseUrl();
-      console.log('=== TARGET DATABASE URL ===');
-      console.log('Using Supabase URL:', targetUrl);
-      console.log('URL is HTTPS:', targetUrl.startsWith('https://'));
-      console.log('URL has no port:', !targetUrl.match(/:\d+$/));
-
-      if (!targetUrl.startsWith('https://')) {
-        throw new Error('Insecure URL detected - aborting database operation');
-      }
 
       if (!user?.id) {
-        const errorMsg = 'User is not authenticated';
-        console.error(errorMsg);
-        alert('Authentication Error: ' + errorMsg);
-        throw new Error(errorMsg);
+        console.error('User is not authenticated');
+        return { id: null };
       }
 
-      if (!bookingData.date) {
-        const errorMsg = 'Missing required field: date';
-        console.error(errorMsg);
-        alert('Database Error: ' + errorMsg);
-        throw new Error(errorMsg);
-      }
-
-      if (!bookingData.timeSlot) {
-        const errorMsg = 'Missing required field: timeSlot';
-        console.error(errorMsg);
-        alert('Database Error: ' + errorMsg);
-        throw new Error(errorMsg);
-      }
-
-      if (!bookingData.location) {
-        const errorMsg = 'Missing required field: location';
-        console.error(errorMsg);
-        alert('Database Error: ' + errorMsg);
-        throw new Error(errorMsg);
+      if (!bookingData.date || !bookingData.timeSlot || !bookingData.location) {
+        console.error('Missing required booking fields');
+        return { id: null };
       }
 
       const bookingRecord = {
@@ -105,82 +72,41 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
         payment_id: String(razorpayPaymentId),
       };
 
-      console.log('SANITIZED DATA OBJECT (verified columns only):', bookingRecord);
+      console.log('Booking record:', bookingRecord);
 
-      console.log('=== TESTING WITH MINIMAL ANONYMOUS HEADERS ===');
-
-      const endpoint = `${targetUrl}/rest/v1/bookings`;
+      const timestamp = Date.now();
+      const endpoint = `https://talcyiifgehpcphwotej.supabase.co/rest/v1/bookings?t=${timestamp}`;
       const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-      console.log('TESTING URL:', endpoint);
-      console.log('Using ANON KEY only (NO Authorization header)');
-      console.log('Anon key (first 30 chars):', anonKey?.substring(0, 30) + '...');
+      console.log('HARDCODED HTTPS ENDPOINT:', endpoint);
 
-      const response = await fetch(endpoint, {
+      fetch(endpoint, {
         method: 'POST',
-        signal: controller.signal,
+        mode: 'cors',
+        referrerPolicy: 'no-referrer-when-downgrade',
         headers: {
           'apikey': anonKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(bookingRecord),
+      }).then(response => {
+        console.log('Background insert status:', response.status);
+        if (response.ok) {
+          console.log('✓ Booking saved successfully');
+        } else {
+          console.error('✗ Booking save failed');
+        }
+      }).catch(err => {
+        console.error('Background insert error:', err);
       });
 
-      clearTimeout(timeoutId);
-
-      console.log('--- FETCH COMPLETE ---');
-      console.log('Response Status:', response.status);
-      console.log('Response OK:', response.ok);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('=== SERVER ERROR ===');
-        console.error('HTTP Status:', response.status);
-        console.error('SERVER RESPONSE:', errorText);
-
-        alert('Database Error: ' + errorText);
-        throw new Error(errorText);
-      }
-
-      console.log('=== BOOKING SAVED SUCCESSFULLY (NATIVE FETCH) ===');
-
-      const insertedData = await supabase
-        .from('bookings')
-        .select('id')
-        .eq('payment_id', razorpayPaymentId)
-        .maybeSingle();
-
-      if (insertedData.data) {
-        console.log('Booking ID retrieved:', insertedData.data.id);
-        return insertedData.data;
-      }
+      console.log('Fire-and-forget request sent. Waiting 500ms before redirect...');
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       return { id: null };
     } catch (error: any) {
-      clearTimeout(timeoutId);
-
-      console.error('=== COMPLETE BOOKING ERROR ===');
-      console.error('Error type:', typeof error);
-      console.error('Error name:', error?.name);
-      console.error('Error message:', error?.message);
-      console.error('Full error:', error);
-
-      if (error.name === 'AbortError') {
-        alert('Network Blocked: Please try a different internet connection or disable VPN.');
-        throw new Error('Request timeout - possible network block');
-      } else if (!error.message) {
-        alert('Database Connection Failed: Unknown error occurred');
-      } else if (error.message.includes('fetch') || error.message.includes('Failed to fetch')) {
-        alert('Network Blocked: Please try a different internet connection or disable VPN.');
-      } else if (error.message.includes('CORS')) {
-        alert('Database Connection Failed: CORS policy error. Check browser console.');
-      } else {
-        alert('Database Connection Failed: ' + error.message);
-      }
-
-      throw error;
-    } finally {
-      console.log('=== COMPLETE BOOKING FUNCTION FINISHED ===');
+      console.error('Error preparing booking:', error);
+      return { id: null };
     }
   };
 
@@ -211,25 +137,12 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
           console.log('Payment response:', response);
           console.log('Razorpay Payment ID:', response.razorpay_payment_id);
 
-          try {
-            const booking = await completeBooking(response.razorpay_payment_id);
+          await completeBooking(response.razorpay_payment_id);
 
-            if (booking && booking.id) {
-              console.log('Database confirmed. Navigating to success page with booking ID:', booking.id);
-              navigate(`/booking-success?booking_id=${booking.id}`, { replace: true });
-            } else {
-              console.warn('Booking created but no ID returned, navigating to bookings page');
-              navigate('/bookings', { replace: true });
-            }
-          } catch (err: any) {
-            console.error('=== ERROR COMPLETING BOOKING ===');
-            console.error('Error:', err);
-            setError('Payment successful but failed to save booking. Please contact support with payment ID: ' + response.razorpay_payment_id);
-          } finally {
-            console.log('=== PAYMENT HANDLER CLEANUP ===');
-            setIsProcessing(false);
-            onClose();
-          }
+          console.log('Redirecting to success page...');
+          setIsProcessing(false);
+          onClose();
+          navigate('/booking-success', { replace: true });
         },
         prefill: {
           name: profile.full_name || '',
