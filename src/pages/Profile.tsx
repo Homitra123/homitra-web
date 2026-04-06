@@ -18,6 +18,7 @@ const Profile = () => {
     completed: 0,
     active: 0,
   });
+  const [statsError, setStatsError] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -30,17 +31,43 @@ const Profile = () => {
   const fetchBookingStats = async () => {
     if (!user) return;
 
-    const { data: bookings } = await supabase
-      .from('bookings')
-      .select('status')
-      .eq('user_id', user.id);
+    setStatsError(false);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setStatsError(true);
+        return;
+      }
 
-    if (bookings) {
-      setBookingStats({
-        total: bookings.length,
-        completed: bookings.filter(b => b.status === 'completed').length,
-        active: bookings.filter(b => b.status !== 'completed' && b.status !== 'cancelled').length,
+      const url = `https://talcyiifgehpcphwotej.supabase.co/rest/v1/bookings?user_id=eq.${user.id}&select=status`;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        headers: {
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhbGN5aWlmZ2VocGNwaHdvdGVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM3NzY5MzcsImV4cCI6MjA1OTM1MjkzN30.Tds-TKDqrQKJXXdmXt_tYEKfXu4O0HfGkdM0JMqI8Qw',
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
       });
+
+      if (response.ok) {
+        const bookings = await response.json();
+        if (bookings) {
+          setBookingStats({
+            total: bookings.length,
+            completed: bookings.filter(b => b.status === 'completed').length,
+            active: bookings.filter(b => b.status !== 'completed' && b.status !== 'cancelled').length,
+          });
+          setStatsError(false);
+        }
+      } else {
+        setStatsError(true);
+      }
+    } catch (err) {
+      console.error('Error fetching booking stats:', err);
+      setStatsError(true);
     }
   };
 
@@ -256,20 +283,32 @@ const Profile = () => {
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 mb-6">
         <h3 className="text-xl font-bold text-gray-900 mb-4">Booking Statistics</h3>
-        <div className="grid grid-cols-3 gap-4">
-          <div className="text-center">
-            <div className="text-3xl font-bold text-blue-600 mb-1">{bookingStats.total}</div>
-            <div className="text-sm text-gray-600">Total</div>
+        {statsError ? (
+          <div className="text-center py-6">
+            <p className="text-gray-600 mb-4">Unable to load statistics</p>
+            <button
+              onClick={fetchBookingStats}
+              className="bg-blue-600 text-white py-2 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors text-sm"
+            >
+              Refresh
+            </button>
           </div>
-          <div className="text-center">
-            <div className="text-3xl font-bold text-green-600 mb-1">{bookingStats.completed}</div>
-            <div className="text-sm text-gray-600">Completed</div>
+        ) : (
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-blue-600 mb-1">{bookingStats.total}</div>
+              <div className="text-sm text-gray-600">Total</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-green-600 mb-1">{bookingStats.completed}</div>
+              <div className="text-sm text-gray-600">Completed</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-orange-600 mb-1">{bookingStats.active}</div>
+              <div className="text-sm text-gray-600">Active</div>
+            </div>
           </div>
-          <div className="text-center">
-            <div className="text-3xl font-bold text-orange-600 mb-1">{bookingStats.active}</div>
-            <div className="text-sm text-gray-600">Active</div>
-          </div>
-        </div>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 mb-6 overflow-hidden">

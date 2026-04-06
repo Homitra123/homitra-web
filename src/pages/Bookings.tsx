@@ -11,6 +11,7 @@ const Bookings = () => {
   const [showSuccessBanner, setShowSuccessBanner] = useState(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     if (location.state?.showSuccess) {
@@ -30,16 +31,42 @@ const Bookings = () => {
     if (!user) return;
 
     setLoading(true);
-    const { data, error } = await supabase
-      .from('bookings')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+    setError(false);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.error('No session found');
+        setError(true);
+        setLoading(false);
+        return;
+      }
 
-    if (error) {
-      console.error('Error fetching bookings:', error);
-    } else {
-      setBookings(data || []);
+      const url = `https://talcyiifgehpcphwotej.supabase.co/rest/v1/bookings?user_id=eq.${user.id}&order=created_at.desc`;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        headers: {
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhbGN5aWlmZ2VocGNwaHdvdGVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM3NzY5MzcsImV4cCI6MjA1OTM1MjkzN30.Tds-TKDqrQKJXXdmXt_tYEKfXu4O0HfGkdM0JMqI8Qw',
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        console.error('Error fetching bookings:', response.status, response.statusText);
+        setError(true);
+        setBookings([]);
+      } else {
+        const data = await response.json();
+        setBookings(data || []);
+        setError(false);
+      }
+    } catch (err) {
+      console.error('Error:', err);
+      setError(true);
+      setBookings([]);
     }
 
     setLoading(false);
@@ -88,6 +115,26 @@ const Bookings = () => {
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Loading bookings...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="text-center max-w-md">
+          <div className="bg-red-50 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+            <Calendar size={32} className="text-red-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Unable to Load Bookings</h2>
+          <p className="text-gray-600 mb-6">We couldn't fetch your bookings. Please try again.</p>
+          <button
+            onClick={fetchBookings}
+            className="bg-blue-600 text-white py-3 px-8 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+          >
+            Refresh
+          </button>
         </div>
       </div>
     );

@@ -21,6 +21,7 @@ const BookingSuccess = () => {
   const [loading, setLoading] = useState(true);
   const [retryCount, setRetryCount] = useState(0);
   const [showEmergencyButton, setShowEmergencyButton] = useState(false);
+  const [error, setError] = useState(false);
 
   const fetchBooking = async () => {
     const bookingId = searchParams.get('booking_id');
@@ -86,6 +87,7 @@ const BookingSuccess = () => {
 
     const attemptFetch = async () => {
       setLoading(true);
+      setError(false);
       const result = await fetchBooking();
 
       if (result) {
@@ -93,6 +95,7 @@ const BookingSuccess = () => {
         clearTimeout(maxTimeoutTimer);
         setBooking(result);
         setLoading(false);
+        setError(false);
       } else if (retryCount < 2) {
         setTimeout(() => {
           setRetryCount(prev => prev + 1);
@@ -101,6 +104,7 @@ const BookingSuccess = () => {
         clearTimeout(emergencyTimer);
         clearTimeout(maxTimeoutTimer);
         setLoading(false);
+        setError(false);
       }
     };
 
@@ -242,7 +246,7 @@ const BookingSuccess = () => {
 
             <div className="flex flex-col sm:flex-row gap-3">
               <Link
-                to="/profile"
+                to="/bookings"
                 className="flex-1 bg-blue-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
               >
                 <span>View My Bookings</span>
