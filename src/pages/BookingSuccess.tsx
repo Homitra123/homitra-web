@@ -38,18 +38,19 @@ const BookingSuccess = () => {
         return;
       }
 
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
       let url: string;
       if (bookingId) {
-        url = `${supabaseUrl}/rest/v1/bookings?id=eq.${bookingId}&limit=1`;
+        url = `https://talcyiifgehpcphwotej.supabase.co/rest/v1/bookings?id=eq.${bookingId}&limit=1`;
       } else {
-        url = `${supabaseUrl}/rest/v1/bookings?user_id=eq.${user.id}&order=created_at.desc&limit=1`;
+        url = `https://talcyiifgehpcphwotej.supabase.co/rest/v1/bookings?user_id=eq.${user.id}&order=created_at.desc&limit=1`;
       }
 
       const response = await fetch(url, {
         method: 'GET',
+        mode: 'cors',
+        credentials: 'include',
         headers: {
           'apikey': supabaseAnonKey,
           'Authorization': `Bearer ${session.access_token}`,
@@ -86,7 +87,7 @@ const BookingSuccess = () => {
       } else if (retryCount < 2) {
         setTimeout(() => {
           setRetryCount(prev => prev + 1);
-        }, 1500);
+        }, 2000);
       } else {
         setShowEmptyState(true);
         setLoading(false);
@@ -140,10 +141,7 @@ const BookingSuccess = () => {
                   <div className="text-right">
                     <h2 className="text-sm font-semibold text-gray-500 uppercase mb-1">Booked On</h2>
                     <p className="text-lg font-semibold text-gray-900">
-                      {new Date(booking.created_at).toLocaleString('en-IN', {
-                        dateStyle: 'medium',
-                        timeStyle: 'short'
-                      })}
+                      {new Date(booking.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
                     </p>
                   </div>
                 </div>
@@ -213,19 +211,27 @@ const BookingSuccess = () => {
                 <div className="bg-blue-50 rounded-2xl p-8 mb-6">
                   <CheckCircle size={64} className="text-blue-600 mx-auto mb-4" />
                   <h3 className="text-xl font-bold text-gray-900 mb-3">Payment Confirmed!</h3>
-                  <p className="text-gray-700 text-lg mb-4">
-                    Your booking is being processed. You can check "My Bookings" in a moment.
+                  <p className="text-gray-700 text-lg mb-6">
+                    Your booking is saved. You can see details in your Profile.
                   </p>
-                  <button
-                    onClick={() => {
-                      setRetryCount(0);
-                      setShowEmptyState(false);
-                      setLoading(true);
-                    }}
-                    className="bg-blue-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
-                  >
-                    Refresh to Load Details
-                  </button>
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                    <button
+                      onClick={() => {
+                        setRetryCount(0);
+                        setShowEmptyState(false);
+                        setLoading(true);
+                      }}
+                      className="bg-blue-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+                    >
+                      Refresh to Load Details
+                    </button>
+                    <button
+                      onClick={() => navigate('/')}
+                      className="bg-gray-100 text-gray-900 py-3 px-6 rounded-xl font-semibold hover:bg-gray-200 transition-colors"
+                    >
+                      Go to Home
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : null}
