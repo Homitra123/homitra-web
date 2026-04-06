@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { CheckCircle, Calendar, Clock, MapPin, IndianRupee, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -20,7 +20,7 @@ const BookingSuccess = () => {
   const [booking, setBooking] = useState<BookingDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [retryCount, setRetryCount] = useState(0);
-  const [showEmptyState, setShowEmptyState] = useState(false);
+  const [showEmergencyButton, setShowEmergencyButton] = useState(false);
 
   const fetchBooking = async () => {
     const bookingId = searchParams.get('booking_id');
@@ -38,8 +38,6 @@ const BookingSuccess = () => {
         return;
       }
 
-      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
       let url: string;
       if (bookingId) {
         url = `https://talcyiifgehpcphwotej.supabase.co/rest/v1/bookings?id=eq.${bookingId}&limit=1`;
@@ -50,9 +48,10 @@ const BookingSuccess = () => {
       const response = await fetch(url, {
         method: 'GET',
         mode: 'cors',
-        credentials: 'include',
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer-when-downgrade',
         headers: {
-          'apikey': supabaseAnonKey,
+          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhbGN5aWlmZ2VocGNwaHdvdGVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM3NzY5MzcsImV4cCI6MjA1OTM1MjkzN30.Tds-TKDqrQKJXXdmXt_tYEKfXu4O0HfGkdM0JMqI8Qw',
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
@@ -77,11 +76,21 @@ const BookingSuccess = () => {
   };
 
   useEffect(() => {
+    const emergencyTimer = setTimeout(() => {
+      setShowEmergencyButton(true);
+    }, 3000);
+
+    const maxTimeoutTimer = setTimeout(() => {
+      setLoading(false);
+    }, 10000);
+
     const attemptFetch = async () => {
       setLoading(true);
       const result = await fetchBooking();
 
       if (result) {
+        clearTimeout(emergencyTimer);
+        clearTimeout(maxTimeoutTimer);
         setBooking(result);
         setLoading(false);
       } else if (retryCount < 2) {
@@ -89,12 +98,18 @@ const BookingSuccess = () => {
           setRetryCount(prev => prev + 1);
         }, 2000);
       } else {
-        setShowEmptyState(true);
+        clearTimeout(emergencyTimer);
+        clearTimeout(maxTimeoutTimer);
         setLoading(false);
       }
     };
 
     attemptFetch();
+
+    return () => {
+      clearTimeout(emergencyTimer);
+      clearTimeout(maxTimeoutTimer);
+    };
   }, [retryCount, searchParams, navigate]);
 
   if (loading) {
@@ -105,6 +120,14 @@ const BookingSuccess = () => {
           <p className="text-gray-600 text-lg">Loading your booking details...</p>
           {retryCount > 0 && (
             <p className="text-gray-500 text-sm mt-2">Retry attempt {retryCount + 1} of 3</p>
+          )}
+          {showEmergencyButton && (
+            <Link
+              to="/profile"
+              className="mt-6 inline-block bg-blue-600 text-white py-4 px-8 rounded-xl font-semibold hover:bg-blue-700 transition-colors text-lg shadow-lg"
+            >
+              View My Bookings Dashboard
+            </Link>
           )}
         </div>
       </div>
@@ -141,7 +164,7 @@ const BookingSuccess = () => {
                   <div className="text-right">
                     <h2 className="text-sm font-semibold text-gray-500 uppercase mb-1">Booked On</h2>
                     <p className="text-lg font-semibold text-gray-900">
-                      {new Date(booking.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+                      {new Date(booking.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true })} IST
                     </p>
                   </div>
                 </div>
@@ -206,7 +229,7 @@ const BookingSuccess = () => {
                   </div>
                 </div>
               </>
-            ) : showEmptyState ? (
+            ) : (
               <div className="mb-8 text-center">
                 <div className="bg-blue-50 rounded-2xl p-8 mb-6">
                   <CheckCircle size={64} className="text-blue-600 mx-auto mb-4" />
@@ -218,23 +241,23 @@ const BookingSuccess = () => {
                     <button
                       onClick={() => {
                         setRetryCount(0);
-                        setShowEmptyState(false);
+                        setShowEmergencyButton(false);
                         setLoading(true);
                       }}
                       className="bg-blue-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
                     >
                       Refresh to Load Details
                     </button>
-                    <button
-                      onClick={() => navigate('/')}
-                      className="bg-gray-100 text-gray-900 py-3 px-6 rounded-xl font-semibold hover:bg-gray-200 transition-colors"
+                    <Link
+                      to="/profile"
+                      className="inline-block bg-gray-100 text-gray-900 py-3 px-6 rounded-xl font-semibold hover:bg-gray-200 transition-colors"
                     >
-                      Go to Home
-                    </button>
+                      View My Bookings Dashboard
+                    </Link>
                   </div>
                 </div>
               </div>
-            ) : null}
+            )}
 
             <div className="bg-gray-50 rounded-2xl p-6 mb-6">
               <h4 className="font-semibold text-gray-900 mb-2">What's Next?</h4>
