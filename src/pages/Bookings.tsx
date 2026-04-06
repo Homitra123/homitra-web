@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Calendar, MapPin, Clock, User, CheckCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { supabase, Booking } from '../lib/supabase';
+import { supabase, Booking, withTimeout, fetchWithNativeFallback } from '../lib/supabase';
 
 const Bookings = () => {
   const { user } = useAuth();
@@ -12,6 +12,7 @@ const Bookings = () => {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   useEffect(() => {
     if (location.state?.showSuccess) {
@@ -28,44 +29,83 @@ const Bookings = () => {
   }, [user]);
 
   const fetchBookings = async () => {
-    if (!user) return;
+    if (!user) {
+      console.log('[Bookings] No user found');
+      return;
+    }
 
+    console.log('[Bookings] Starting fetch for user UUID:', user.id);
     setLoading(true);
     setError(false);
+    setErrorMessage('');
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        console.error('No session found');
+
+      if (!session || !session.access_token) {
+        console.error('[Bookings] Auth Token Missing - No session or access_token');
         setError(true);
+        setErrorMessage('Session expired. Please log out and log back in.');
         setLoading(false);
         return;
       }
 
-      const url = `https://talcyiifgehpcphwotej.supabase.co/rest/v1/bookings?user_id=eq.${user.id}&order=created_at.desc`;
+      console.log('[Bookings] Session found, attempting Supabase client with 10s timeout');
 
-      const response = await fetch(url, {
-        method: 'GET',
-        mode: 'cors',
-        credentials: 'omit',
-        headers: {
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhbGN5aWlmZ2VocGNwaHdvdGVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM3NzY5MzcsImV4cCI6MjA1OTM1MjkzN30.Tds-TKDqrQKJXXdmXt_tYEKfXu4O0HfGkdM0JMqI8Qw',
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      try {
+        const { data, error: fetchError } = await withTimeout(
+          supabase
+            .from('bookings')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false }),
+          10000,
+          'Supabase SDK timeout'
+        );
 
-      if (!response.ok) {
-        console.error('Error fetching bookings:', response.status, response.statusText);
-        setError(true);
-        setBookings([]);
-      } else {
-        const data = await response.json();
-        setBookings(data || []);
-        setError(false);
+        console.log('[Bookings] Supabase query result - Data:', data?.length, 'Error:', fetchError);
+
+        if (fetchError) {
+          console.error('[Bookings] Supabase error:', fetchError);
+          setError(true);
+          setErrorMessage(`Error loading bookings: ${fetchError.message}`);
+          setBookings([]);
+        } else if (data) {
+          console.log('[Bookings] Successfully loaded', data.length, 'bookings for account UUID:', user.id);
+          setBookings(data);
+          setError(false);
+
+          if (data.length === 0) {
+            console.log('[Bookings] Empty result - No bookings found for this account');
+          }
+        } else {
+          console.error('[Bookings] Unexpected: No data and no error');
+          setError(true);
+          setErrorMessage('Unexpected response from server');
+          setBookings([]);
+        }
+      } catch (timeoutErr: any) {
+        if (timeoutErr.message === 'Supabase SDK timeout') {
+          console.warn('[Bookings] SDK timed out, switching to native fetch fallback');
+          try {
+            const fallbackData = await fetchWithNativeFallback('bookings', user.id, session.access_token);
+            console.log('[Bookings] Fallback successful - loaded', fallbackData.length, 'bookings');
+            setBookings(fallbackData);
+            setError(false);
+          } catch (fallbackErr: any) {
+            console.error('[Bookings] Fallback also failed:', fallbackErr);
+            setError(true);
+            setErrorMessage('Unable to load bookings. Network may be blocked.');
+            setBookings([]);
+          }
+        } else {
+          throw timeoutErr;
+        }
       }
     } catch (err) {
-      console.error('Error:', err);
+      console.error('[Bookings] Fetch error:', err);
       setError(true);
+      setErrorMessage('Network error. Please check your connection and try again.');
       setBookings([]);
     }
 
@@ -128,7 +168,9 @@ const Bookings = () => {
             <Calendar size={32} className="text-red-600" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Unable to Load Bookings</h2>
-          <p className="text-gray-600 mb-6">We couldn't fetch your bookings. Please try again.</p>
+          <p className="text-gray-600 mb-6">
+            {errorMessage || 'We couldn\'t fetch your bookings. Please try again.'}
+          </p>
           <button
             onClick={fetchBookings}
             className="bg-blue-600 text-white py-3 px-8 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
@@ -186,13 +228,18 @@ const Bookings = () => {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center">
           <Calendar size={48} className="text-gray-300 mx-auto mb-4" />
           <h3 className="text-xl font-semibold text-gray-900 mb-2">
-            No {activeTab} bookings
+            {bookings.length === 0 ? 'No bookings found for your account ID' : `No ${activeTab} bookings`}
           </h3>
-          <p className="text-gray-600">
-            {activeTab === 'active'
+          <p className="text-gray-600 mb-2">
+            {bookings.length === 0
+              ? "You haven't made any bookings yet. Start booking services to see them here."
+              : activeTab === 'active'
               ? "You don't have any active bookings at the moment."
               : "You haven't completed any bookings yet."}
           </p>
+          {bookings.length === 0 && user && (
+            <p className="text-xs text-gray-400 font-mono mt-2">Account ID: {user.id.slice(0, 8)}...</p>
+          )}
         </div>
       ) : (
         <div className="space-y-4">

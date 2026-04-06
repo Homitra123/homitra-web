@@ -1,45 +1,71 @@
 import { createClient } from '@supabase/supabase-js';
 
-const rawUrl = (import.meta.env.VITE_SUPABASE_URL as string || '').trim();
-const rawKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string || '').trim();
+const HARDCODED_URL = 'https://talcyiifgehpcphwotej.supabase.co';
+const HARDCODED_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhbGN5aWlmZ2VocGNwaHdvdGVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM3NzY5MzcsImV4cCI6MjA1OTM1MjkzN30.Tds-TKDqrQKJXXdmXt_tYEKfXu4O0HfGkdM0JMqI8Qw';
 
-if (!rawUrl || !rawKey) {
-  throw new Error('Missing Supabase environment variables. VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are required.');
-}
-
-const sanitizedUrl = rawUrl.startsWith('http://')
-  ? rawUrl.replace('http://', 'https://')
-  : rawUrl;
-
-if (!sanitizedUrl.startsWith('https://')) {
-  throw new Error(`Insecure URL detected. Supabase URL must use HTTPS. Received: ${sanitizedUrl}`);
-}
-
-if (sanitizedUrl.includes(':54321') || sanitizedUrl.includes('localhost') || sanitizedUrl.includes('127.0.0.1')) {
-  throw new Error(`Local development URL detected. Production requires remote HTTPS URL. Received: ${sanitizedUrl}`);
-}
-
-const finalUrl = sanitizedUrl.replace(/:\d+$/, '');
-
-console.log('Supabase client initialized with sanitized URL:', finalUrl);
-console.log('Using ANON key:', rawKey.substring(0, 20) + '...');
+console.log('[Supabase] Client initialized with hardcoded production URL:', HARDCODED_URL);
+console.log('[Supabase] Using ANON key:', HARDCODED_KEY.substring(0, 20) + '...');
 
 export const supabase = createClient(
-  finalUrl,
-  rawKey,
+  HARDCODED_URL,
+  HARDCODED_KEY,
   {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
+      storageKey: 'homitra-auth-token',
+      storage: window.localStorage,
     },
     global: {
       fetch: window.fetch.bind(window),
-      headers: {},
+      headers: {
+        'X-Client-Info': 'homitra-web-app',
+      },
     },
   }
 );
 
-export const getSupabaseUrl = () => finalUrl;
+export const getSupabaseUrl = () => HARDCODED_URL;
+export const getSupabaseAnonKey = () => HARDCODED_KEY;
+
+export const withTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number = 10000,
+  timeoutError: string = 'Request timed out'
+): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(timeoutError)), timeoutMs)
+    ),
+  ]);
+};
+
+export const fetchWithNativeFallback = async (
+  table: string,
+  userId: string,
+  accessToken: string
+): Promise<any[]> => {
+  console.log(`[Fallback] Using native fetch for ${table}`);
+
+  const url = `${HARDCODED_URL}/rest/v1/${table}?user_id=eq.${userId}&order=created_at.desc`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'apikey': HARDCODED_KEY,
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Fallback fetch failed: ${response.status}`);
+  }
+
+  return response.json();
+};
 
 export interface Profile {
   id: string;

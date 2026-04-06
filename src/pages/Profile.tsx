@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Mail, Phone, ChevronRight, LogOut, Bell, Shield, HelpCircle, CreditCard as Edit2, X, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../lib/supabase';
+import { supabase, withTimeout, fetchWithNativeFallback } from '../lib/supabase';
 
 const Profile = () => {
   const { user, profile, signOut, updateProfile } = useAuth();
@@ -29,44 +29,86 @@ const Profile = () => {
   }, [profile]);
 
   const fetchBookingStats = async () => {
-    if (!user) return;
+    if (!user) {
+      console.log('[Profile] No user found');
+      return;
+    }
 
+    console.log('[Profile] Starting stats fetch for user UUID:', user.id);
     setStatsError(false);
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+
+      if (!session || !session.access_token) {
+        console.error('[Profile] Auth Token Missing - No session or access_token');
         setStatsError(true);
         return;
       }
 
-      const url = `https://talcyiifgehpcphwotej.supabase.co/rest/v1/bookings?user_id=eq.${user.id}&select=status`;
+      console.log('[Profile] Session found, attempting Supabase client with 10s timeout');
 
-      const response = await fetch(url, {
-        method: 'GET',
-        mode: 'cors',
-        credentials: 'omit',
-        headers: {
-          'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhbGN5aWlmZ2VocGNwaHdvdGVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDM3NzY5MzcsImV4cCI6MjA1OTM1MjkzN30.Tds-TKDqrQKJXXdmXt_tYEKfXu4O0HfGkdM0JMqI8Qw',
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+      try {
+        const { data: bookings, error: fetchError } = await withTimeout(
+          supabase
+            .from('bookings')
+            .select('status')
+            .eq('user_id', user.id),
+          10000,
+          'Supabase SDK timeout'
+        );
 
-      if (response.ok) {
-        const bookings = await response.json();
-        if (bookings) {
+        console.log('[Profile] Supabase query result - Data:', bookings?.length, 'Error:', fetchError);
+
+        if (fetchError) {
+          console.error('[Profile] Supabase error:', fetchError);
+          setStatsError(true);
+        } else if (bookings) {
+          const total = bookings.length;
+          const completed = bookings.filter((b: any) => b.status === 'completed').length;
+          const active = bookings.filter((b: any) => b.status !== 'completed' && b.status !== 'cancelled').length;
+
+          console.log('[Profile] Calculated stats - Total:', total, 'Completed:', completed, 'Active:', active);
+
           setBookingStats({
-            total: bookings.length,
-            completed: bookings.filter(b => b.status === 'completed').length,
-            active: bookings.filter(b => b.status !== 'completed' && b.status !== 'cancelled').length,
+            total,
+            completed,
+            active,
           });
           setStatsError(false);
+
+          if (bookings.length === 0) {
+            console.log('[Profile] Empty result - No bookings found for stats for UUID:', user.id);
+          } else {
+            console.log('[Profile] Successfully calculated stats for', bookings.length, 'bookings');
+          }
+        } else {
+          console.error('[Profile] Unexpected: No data and no error');
+          setStatsError(true);
         }
-      } else {
-        setStatsError(true);
+      } catch (timeoutErr: any) {
+        if (timeoutErr.message === 'Supabase SDK timeout') {
+          console.warn('[Profile] SDK timed out, switching to native fetch fallback');
+          try {
+            const fallbackData = await fetchWithNativeFallback('bookings', user.id, session.access_token);
+            const total = fallbackData.length;
+            const completed = fallbackData.filter((b: any) => b.status === 'completed').length;
+            const active = fallbackData.filter((b: any) => b.status !== 'completed' && b.status !== 'cancelled').length;
+
+            console.log('[Profile] Fallback successful - Stats:', total, completed, active);
+
+            setBookingStats({ total, completed, active });
+            setStatsError(false);
+          } catch (fallbackErr: any) {
+            console.error('[Profile] Fallback also failed:', fallbackErr);
+            setStatsError(true);
+          }
+        } else {
+          throw timeoutErr;
+        }
       }
     } catch (err) {
-      console.error('Error fetching booking stats:', err);
+      console.error('[Profile] Fetch error:', err);
       setStatsError(true);
     }
   };
@@ -285,12 +327,13 @@ const Profile = () => {
         <h3 className="text-xl font-bold text-gray-900 mb-4">Booking Statistics</h3>
         {statsError ? (
           <div className="text-center py-6">
-            <p className="text-gray-600 mb-4">Unable to load statistics</p>
+            <p className="text-gray-600 mb-1">Unable to load booking statistics</p>
+            <p className="text-sm text-gray-500 mb-4">Check console for details</p>
             <button
               onClick={fetchBookingStats}
               className="bg-blue-600 text-white py-2 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors text-sm"
             >
-              Refresh
+              Retry
             </button>
           </div>
         ) : (
