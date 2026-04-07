@@ -75,18 +75,22 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
 
       console.log('Booking record:', bookingRecord);
 
-      const endpoint = `${getSupabaseUrl()}/rest/v1/bookings`;
+      const baseUrl = getSupabaseUrl();
       const anonKey = getSupabaseAnonKey();
 
-      console.log('Supabase endpoint:', endpoint);
+      const urlObject = new URL(`${baseUrl}/rest/v1/bookings`);
+      urlObject.protocol = 'https:';
+
+      console.log('Supabase endpoint (HTTPS):', urlObject.toString());
       console.log('[PaymentModal] Using hardcoded anon key:', anonKey.substring(0, 20) + '...');
 
-      fetch(endpoint, {
+      fetch(urlObject.toString(), {
         method: 'POST',
         headers: {
           'apikey': anonKey,
           'Authorization': `Bearer ${anonKey}`,
           'Content-Type': 'application/json',
+          'Origin': 'https://www.homitra.co.in',
         },
         body: JSON.stringify(bookingRecord),
       }).then(response => {

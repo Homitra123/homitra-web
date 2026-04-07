@@ -47,15 +47,21 @@ const BookingSuccess = () => {
       const baseUrl = getSupabaseUrl();
       const anonKey = getSupabaseAnonKey();
 
-      let url: string;
+      const urlObject = new URL(`${baseUrl}/rest/v1/bookings`);
+      urlObject.protocol = 'https:';
+
       if (bookingId) {
-        url = `${baseUrl}/rest/v1/bookings?id=eq.${bookingId}&limit=1`;
+        urlObject.searchParams.set('id', `eq.${bookingId}`);
       } else {
-        url = `${baseUrl}/rest/v1/bookings?user_id=eq.${user.id}&order=created_at.desc&limit=1`;
+        urlObject.searchParams.set('user_id', `eq.${user.id}`);
+        urlObject.searchParams.set('order', 'created_at.desc');
       }
+      urlObject.searchParams.set('limit', '1');
+
+      console.log('[BookingSuccess] HTTPS URL:', urlObject.toString());
 
       const response = await Promise.race([
-        fetch(url, {
+        fetch(urlObject.toString(), {
           method: 'GET',
           mode: 'cors',
           credentials: 'omit',
@@ -63,6 +69,7 @@ const BookingSuccess = () => {
             'apikey': anonKey,
             'Authorization': `Bearer ${session.access_token}`,
             'Content-Type': 'application/json',
+            'Origin': 'https://www.homitra.co.in',
           },
         }),
         new Promise<Response>((_, reject) =>
@@ -190,8 +197,15 @@ const BookingSuccess = () => {
               </>
             ) : (
               <div className="mb-8 text-center py-12">
-                <p className="text-gray-600 text-lg mb-4">Your booking details will appear here shortly.</p>
-                <p className="text-gray-500">Check your bookings dashboard to view all details.</p>
+                <p className="text-gray-600 text-lg mb-4">Your booking was successful!</p>
+                <p className="text-gray-500 mb-6">Booking details will appear shortly. You can view them in your bookings dashboard.</p>
+                <Link
+                  to="/bookings"
+                  className="inline-flex items-center gap-2 bg-blue-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+                >
+                  <span>Go to My Bookings</span>
+                  <ArrowRight size={20} />
+                </Link>
               </div>
             )}
 

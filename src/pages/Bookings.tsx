@@ -38,28 +38,34 @@ const Bookings = () => {
   }, [user?.id]);
 
   const fetchBookings = async () => {
-    if (!user) {
-      console.log('[Bookings] No user found');
-      return;
-    }
-
     const attemptNumber = (debugInfo.loadAttempts || 0) + 1;
-    console.log('[Bookings] Starting fetch #', attemptNumber, 'for user UUID:', user.id);
 
     setContentLoading(true);
     setError(false);
     setErrorMessage('');
 
-    setDebugInfo(prev => ({
-      ...prev,
-      currentUserId: user.id,
-      fetchStatus: 'Fetching...',
-      rawDataCount: 0,
-      timestamp: new Date().toLocaleTimeString(),
-      loadAttempts: attemptNumber,
-    }));
-
     try {
+      const { data: { user: freshUser } } = await supabase.auth.getUser();
+
+      if (!freshUser) {
+        console.log('[Bookings] No user found');
+        setError(true);
+        setErrorMessage('Please log in to view bookings.');
+        setContentLoading(false);
+        return;
+      }
+
+      console.log('[Bookings] Starting fetch #', attemptNumber, 'for user UUID:', freshUser.id);
+
+      setDebugInfo(prev => ({
+        ...prev,
+        currentUserId: freshUser.id,
+        fetchStatus: 'Fetching...',
+        rawDataCount: 0,
+        timestamp: new Date().toLocaleTimeString(),
+        loadAttempts: attemptNumber,
+      }));
+
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!session || !session.access_token) {
@@ -73,12 +79,16 @@ const Bookings = () => {
 
       const baseUrl = getSupabaseUrl();
       const anonKey = getSupabaseAnonKey();
-      const url = `${baseUrl}/rest/v1/bookings?user_id=eq.${user.id}&order=created_at.desc`;
 
-      console.log('[Bookings] Using native fetch with 2s timeout');
+      const urlObject = new URL(`${baseUrl}/rest/v1/bookings`);
+      urlObject.protocol = 'https:';
+      urlObject.searchParams.set('user_id', `eq.${freshUser.id}`);
+      urlObject.searchParams.set('order', 'created_at.desc');
+
+      console.log('[Bookings] Using native fetch with 2s timeout, HTTPS forced');
 
       const response = await Promise.race([
-        fetch(url, {
+        fetch(urlObject.toString(), {
           method: 'GET',
           mode: 'cors',
           credentials: 'omit',
@@ -86,6 +96,7 @@ const Bookings = () => {
             'apikey': anonKey,
             'Authorization': `Bearer ${session.access_token}`,
             'Content-Type': 'application/json',
+            'Origin': 'https://www.homitra.co.in',
           },
         }),
         new Promise<Response>((_, reject) =>
