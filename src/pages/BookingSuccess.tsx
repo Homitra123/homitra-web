@@ -27,41 +27,73 @@ const BookingSuccess = () => {
   const fetchBooking = async () => {
     const bookingId = searchParams.get('booking_id');
 
+    console.log('[BookingSuccess] ==> Starting fetch, bookingId:', bookingId);
+
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      console.log('[BookingSuccess] Step 1: Getting session');
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        console.error('[BookingSuccess] Session error:', sessionError);
+        navigate('/login');
+        return;
+      }
+
       if (!session) {
+        console.error('[BookingSuccess] No session found');
         navigate('/login');
         return;
       }
 
-      const { data: { user } } = await supabase.auth.getUser();
+      console.log('[BookingSuccess] ✓ Session valid');
+
+      console.log('[BookingSuccess] Step 2: Getting user');
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+      if (userError) {
+        console.error('[BookingSuccess] User error:', userError);
+        navigate('/login');
+        return;
+      }
+
       if (!user) {
+        console.error('[BookingSuccess] No user found');
         navigate('/login');
         return;
       }
 
-      console.log('[BookingSuccess] Fetching with native fetch, bookingId:', bookingId);
+      console.log('[BookingSuccess] ✓ User found:', user.id);
 
+      console.log('[BookingSuccess] Step 3: Waiting 2 seconds for DB sync');
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       const baseUrl = getSupabaseUrl();
       const anonKey = getSupabaseAnonKey();
+
+      console.log('[BookingSuccess] Step 4: Constructing HTTPS URL');
+      console.log('[BookingSuccess] Base URL:', baseUrl);
 
       const urlObject = new URL(`${baseUrl}/rest/v1/bookings`);
       urlObject.protocol = 'https:';
 
       if (bookingId) {
         urlObject.searchParams.set('id', `eq.${bookingId}`);
+        console.log('[BookingSuccess] Query by booking_id:', bookingId);
       } else {
         urlObject.searchParams.set('user_id', `eq.${user.id}`);
         urlObject.searchParams.set('order', 'created_at.desc');
+        console.log('[BookingSuccess] Query by user_id:', user.id);
       }
       urlObject.searchParams.set('limit', '1');
 
-      console.log('[BookingSuccess] HTTPS URL:', urlObject.toString());
+      const finalUrl = urlObject.toString();
+      console.log('[BookingSuccess] ✓ Final URL:', finalUrl);
+      console.log('[BookingSuccess] URL protocol:', urlObject.protocol);
+
+      console.log('[BookingSuccess] Step 5: Executing fetch with 5s timeout');
 
       const response = await Promise.race([
-        fetch(urlObject.toString(), {
+        fetch(finalUrl, {
           method: 'GET',
           mode: 'cors',
           credentials: 'omit',
@@ -73,21 +105,36 @@ const BookingSuccess = () => {
           },
         }),
         new Promise<Response>((_, reject) =>
-          setTimeout(() => reject(new Error('Fetch timeout')), 2000)
+          setTimeout(() => reject(new Error('Fetch timeout after 5s')), 5000)
         ),
       ]) as Response;
 
+      console.log('[BookingSuccess] ✓ Response received, status:', response.status);
+
       if (response.ok) {
         const data = await response.json();
+        console.log('[BookingSuccess] Response data:', data);
+
         if (data && data.length > 0) {
-          console.log('[BookingSuccess] Loaded booking:', data[0]);
+          console.log('[BookingSuccess] ✓ Booking loaded:', data[0].id);
           setBooking(data[0]);
+        } else {
+          console.warn('[BookingSuccess] No booking data returned');
         }
+      } else {
+        const errorText = await response.text();
+        console.error('[BookingSuccess] HTTP error:', response.status, errorText);
       }
-    } catch (err) {
-      console.error('[BookingSuccess] Error:', err);
+    } catch (err: any) {
+      console.error('[BookingSuccess] ✗ Fatal error:', err);
+      console.error('[BookingSuccess] Error details:', {
+        message: err.message,
+        name: err.name,
+        stack: err.stack
+      });
     } finally {
       setContentLoading(false);
+      console.log('[BookingSuccess] Fetch complete, contentLoading set to false');
     }
   };
 

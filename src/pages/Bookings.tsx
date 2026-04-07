@@ -31,31 +31,41 @@ const Bookings = () => {
   }, [location]);
 
   useEffect(() => {
-    if (user && !hasLoadedRef.current) {
+    console.log('[Bookings] Component mounted, triggering fetch');
+    if (!hasLoadedRef.current) {
       hasLoadedRef.current = true;
       fetchBookings();
     }
-  }, [user?.id]);
+  }, []);
 
   const fetchBookings = async () => {
     const attemptNumber = (debugInfo.loadAttempts || 0) + 1;
+
+    console.log('[Bookings] ==> Fetch attempt #', attemptNumber, 'starting...');
 
     setContentLoading(true);
     setError(false);
     setErrorMessage('');
 
     try {
-      const { data: { user: freshUser } } = await supabase.auth.getUser();
+      console.log('[Bookings] Step 1: Getting fresh user from Supabase auth');
+      const { data: { user: freshUser }, error: userError } = await supabase.auth.getUser();
+
+      if (userError) {
+        console.error('[Bookings] Error getting user:', userError);
+        throw userError;
+      }
 
       if (!freshUser) {
-        console.log('[Bookings] No user found');
+        console.error('[Bookings] No user found in session');
         setError(true);
         setErrorMessage('Please log in to view bookings.');
+        setDebugInfo(prev => ({ ...prev, currentUserId: 'N/A', fetchStatus: 'Not started' }));
         setContentLoading(false);
         return;
       }
 
-      console.log('[Bookings] Starting fetch #', attemptNumber, 'for user UUID:', freshUser.id);
+      console.log('[Bookings] ✓ User found:', freshUser.id);
 
       setDebugInfo(prev => ({
         ...prev,
@@ -66,10 +76,16 @@ const Bookings = () => {
         loadAttempts: attemptNumber,
       }));
 
-      const { data: { session } } = await supabase.auth.getSession();
+      console.log('[Bookings] Step 2: Getting session for auth token');
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        console.error('[Bookings] Error getting session:', sessionError);
+        throw sessionError;
+      }
 
       if (!session || !session.access_token) {
-        console.error('[Bookings] Auth Token Missing');
+        console.error('[Bookings] No valid session or access token');
         setError(true);
         setErrorMessage('Session expired. Please log out and log back in.');
         setDebugInfo(prev => ({ ...prev, fetchStatus: 'Auth Failed' }));
@@ -77,18 +93,27 @@ const Bookings = () => {
         return;
       }
 
+      console.log('[Bookings] ✓ Session valid, token length:', session.access_token.length);
+
       const baseUrl = getSupabaseUrl();
       const anonKey = getSupabaseAnonKey();
+
+      console.log('[Bookings] Step 3: Constructing HTTPS URL');
+      console.log('[Bookings] Base URL:', baseUrl);
 
       const urlObject = new URL(`${baseUrl}/rest/v1/bookings`);
       urlObject.protocol = 'https:';
       urlObject.searchParams.set('user_id', `eq.${freshUser.id}`);
       urlObject.searchParams.set('order', 'created_at.desc');
 
-      console.log('[Bookings] Using native fetch with 2s timeout, HTTPS forced');
+      const finalUrl = urlObject.toString();
+      console.log('[Bookings] ✓ Final URL:', finalUrl);
+      console.log('[Bookings] URL protocol:', urlObject.protocol);
+
+      console.log('[Bookings] Step 4: Executing fetch with 5s timeout');
 
       const response = await Promise.race([
-        fetch(urlObject.toString(), {
+        fetch(finalUrl, {
           method: 'GET',
           mode: 'cors',
           credentials: 'omit',
@@ -100,22 +125,33 @@ const Bookings = () => {
           },
         }),
         new Promise<Response>((_, reject) =>
-          setTimeout(() => reject(new Error('Fetch timeout')), 2000)
+          setTimeout(() => reject(new Error('Fetch timeout after 5s')), 5000)
         ),
       ]) as Response;
 
+      console.log('[Bookings] ✓ Response received, status:', response.status);
+
       if (!response.ok) {
-        console.error('[Bookings] Fetch error:', response.status);
-        throw new Error(`HTTP ${response.status}`);
+        const errorText = await response.text();
+        console.error('[Bookings] HTTP error:', response.status, errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
       const data = await response.json();
-      console.log('[Bookings] Successfully loaded', data.length, 'bookings');
+      console.log('[Bookings] ✓ Successfully loaded', data.length, 'bookings');
+      console.log('[Bookings] Booking IDs:', data.map((b: Booking) => b.id.slice(0, 8)).join(', '));
+
       setBookings(data);
       setError(false);
       setDebugInfo(prev => ({ ...prev, fetchStatus: 'Success', rawDataCount: data.length }));
     } catch (err: any) {
-      console.error('[Bookings] Fetch error:', err);
+      console.error('[Bookings] ✗ Fatal error:', err);
+      console.error('[Bookings] Error details:', {
+        message: err.message,
+        name: err.name,
+        stack: err.stack
+      });
+
       if (bookings.length === 0) {
         setError(true);
         setErrorMessage('Unable to load bookings. Please try again.');
@@ -123,6 +159,7 @@ const Bookings = () => {
       setDebugInfo(prev => ({ ...prev, fetchStatus: 'Error: ' + err.message }));
     } finally {
       setContentLoading(false);
+      console.log('[Bookings] Fetch complete, contentLoading set to false');
     }
   };
 

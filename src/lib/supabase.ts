@@ -23,7 +23,18 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-export const getSupabaseUrl = () => supabaseUrl;
+export const getSupabaseUrl = () => {
+  if (supabaseUrl.startsWith('http://')) {
+    console.warn('[Supabase] WARNING: URL is HTTP, forcing HTTPS');
+    return supabaseUrl.replace('http://', 'https://');
+  }
+  if (!supabaseUrl.startsWith('https://')) {
+    console.warn('[Supabase] WARNING: URL missing protocol, adding HTTPS');
+    return `https://${supabaseUrl}`;
+  }
+  return supabaseUrl;
+};
+
 export const getSupabaseAnonKey = () => supabaseAnonKey;
 
 export const withTimeout = async <T>(
