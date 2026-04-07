@@ -41,31 +41,55 @@ export const withTimeout = async <T>(
   ]);
 };
 
-export const fetchWithNativeFallback = async (
+export async function fetchWithNativeFallback(
   table: string,
   userId: string,
   accessToken: string
-): Promise<any[]> => {
-  console.log(`[Fallback] Using native fetch for ${table}`);
+): Promise<any[]>;
 
-  const url = `${HARDCODED_URL}/rest/v1/${table}?user_id=eq.${userId}&order=created_at.desc`;
+export async function fetchWithNativeFallback(
+  url: string,
+  options: RequestInit
+): Promise<Response>;
 
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'apikey': HARDCODED_KEY,
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=representation',
-    },
-  });
+export async function fetchWithNativeFallback(
+  tableOrUrl: string,
+  userIdOrOptions: string | RequestInit,
+  accessToken?: string
+): Promise<any[] | Response> {
+  if (typeof userIdOrOptions === 'string' && accessToken) {
+    console.log(`[Fallback] Using native fetch for table ${tableOrUrl}`);
 
-  if (!response.ok) {
-    throw new Error(`Fallback fetch failed: ${response.status}`);
+    const url = `${HARDCODED_URL}/rest/v1/${tableOrUrl}?user_id=eq.${userIdOrOptions}&order=created_at.desc`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'apikey': HARDCODED_KEY,
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation',
+      },
+      credentials: 'omit',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Fallback fetch failed: ${response.status}`);
+    }
+
+    return response.json();
+  } else {
+    console.log(`[Fallback] Using native fetch for URL: ${tableOrUrl}`);
+
+    const options = userIdOrOptions as RequestInit;
+    const response = await fetch(tableOrUrl, {
+      ...options,
+      credentials: 'omit',
+    });
+
+    return response;
   }
-
-  return response.json();
-};
+}
 
 export interface Profile {
   id: string;

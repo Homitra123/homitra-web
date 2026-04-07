@@ -15,6 +15,7 @@ const Profile = () => {
   const [fullName, setFullName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [loadingStats, setLoadingStats] = useState(true);
   const [bookingStats, setBookingStats] = useState({
     total: 0,
@@ -33,12 +34,23 @@ const Profile = () => {
   });
 
   useEffect(() => {
-    console.log('[Profile] Re-rendering due to:', { userId: user?.id, profileId: profile?.id });
+    console.log('[Profile] Re-rendering due to:', {
+      userId: user?.id,
+      profileId: profile?.id,
+      isInitialLoad: isInitialLoadRef.current,
+      hasLoadedOnce: hasLoadedStatsRef.current
+    });
+
     if (profile) {
       setPhoneNumber(profile.phone || '');
       setFullName(profile.full_name || '');
+
       if (isInitialLoadRef.current) {
+        console.log('[Profile] First mount - loading stats');
         fetchBookingStats(true);
+      } else if (hasLoadedStatsRef.current) {
+        console.log('[Profile] Navigation return - silently refreshing stats in background');
+        fetchBookingStats(false);
       }
     }
   }, [user?.id, profile?.id]);
@@ -79,7 +91,8 @@ const Profile = () => {
         return;
       }
 
-      console.log('[Profile] Session found, attempting Supabase client with 10s timeout');
+      const timeoutDuration = isInitial ? 2000 : 2000;
+      console.log(`[Profile] Session found, attempting Supabase client with ${timeoutDuration}ms timeout`);
       setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fetching with RLS...' }));
 
       try {
@@ -88,7 +101,7 @@ const Profile = () => {
             .from('bookings')
             .select('status')
             .eq('user_id', user.id),
-          10000,
+          timeoutDuration,
           'Supabase SDK timeout'
         );
 
@@ -203,19 +216,88 @@ const Profile = () => {
 
     setSaving(true);
     setError('');
+    setSuccessMessage('');
 
     try {
-      const { error: updateError } = await updateProfile({ phone: phoneNumber });
+      console.log('[Profile] Attempting SDK update with 2s timeout for phone:', phoneNumber);
 
-      if (updateError) {
-        console.error('Profile update error:', updateError);
-        setError(`Failed to update phone number: ${updateError.message}`);
-      } else {
+      try {
+        const { error: updateError } = await withTimeout(
+          updateProfile({ phone: phoneNumber }),
+          2000,
+          'Profile update SDK timeout'
+        );
+
+        if (updateError) {
+          console.error('[Profile] SDK update error:', updateError);
+          throw new Error(updateError.message);
+        }
+
+        console.log('[Profile] SDK update successful');
         setIsEditingPhone(false);
+        setSuccessMessage('Phone number updated successfully');
+        setTimeout(() => setSuccessMessage(''), 3000);
+        setSaving(false);
+        return;
+
+      } catch (timeoutErr: any) {
+        if (timeoutErr.message === 'Profile update SDK timeout') {
+          console.warn('[Profile] SDK timeout, falling back to Native Fetch for update');
+
+          const { data: { session } } = await supabase.auth.getSession();
+
+          console.log('[Profile] Auth check - Session exists:', !!session);
+          console.log('[Profile] Auth check - Access token exists:', !!session?.access_token);
+          console.log('[Profile] Auth check - Token preview:', session?.access_token?.substring(0, 20));
+
+          if (!session?.access_token) {
+            throw new Error('No auth session available - please log in again');
+          }
+
+          const cacheBuster = `_cb=${Date.now()}`;
+          const updateUrl = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/profiles?id=eq.${user?.id}&${cacheBuster}`;
+
+          console.log('[Profile] Native PATCH to:', updateUrl);
+          console.log('[Profile] Authorization header:', `Bearer ${session.access_token.substring(0, 30)}...`);
+
+          const nativeUpdate = await fetchWithNativeFallback(
+            updateUrl,
+            {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+                'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+                'Prefer': 'return=minimal',
+                'Cache-Control': 'no-cache, no-store, must-revalidate'
+              },
+              body: JSON.stringify({ phone: phoneNumber })
+            }
+          );
+
+          console.log('[Profile] Native update response status:', nativeUpdate.status);
+
+          if (!nativeUpdate.ok) {
+            const errorText = await nativeUpdate.text();
+            console.error('[Profile] Native update failed:', nativeUpdate.status, errorText);
+            throw new Error(`Update failed with status ${nativeUpdate.status}`);
+          }
+
+          console.log('[Profile] Native Fetch update successful - Status:', nativeUpdate.status);
+
+          await updateProfile({ phone: phoneNumber });
+
+          setIsEditingPhone(false);
+          setSuccessMessage('Phone number updated successfully');
+          setTimeout(() => setSuccessMessage(''), 3000);
+        } else {
+          throw timeoutErr;
+        }
       }
+
     } catch (err: any) {
-      console.error('Unexpected error:', err);
-      setError(`Error: ${err.message}`);
+      console.error('[Profile] Update error:', err);
+      setError(`Failed to update phone number: ${err.message}`);
     }
 
     setSaving(false);
@@ -229,13 +311,88 @@ const Profile = () => {
 
     setSaving(true);
     setError('');
+    setSuccessMessage('');
 
-    const { error: updateError } = await updateProfile({ full_name: fullName });
+    try {
+      console.log('[Profile] Attempting SDK update with 2s timeout for name:', fullName);
 
-    if (updateError) {
-      setError('Failed to update name');
-    } else {
-      setIsEditingName(false);
+      try {
+        const { error: updateError } = await withTimeout(
+          updateProfile({ full_name: fullName }),
+          2000,
+          'Profile update SDK timeout'
+        );
+
+        if (updateError) {
+          console.error('[Profile] SDK update error:', updateError);
+          throw new Error(updateError.message);
+        }
+
+        console.log('[Profile] SDK update successful');
+        setIsEditingName(false);
+        setSuccessMessage('Name updated successfully');
+        setTimeout(() => setSuccessMessage(''), 3000);
+        setSaving(false);
+        return;
+
+      } catch (timeoutErr: any) {
+        if (timeoutErr.message === 'Profile update SDK timeout') {
+          console.warn('[Profile] SDK timeout, falling back to Native Fetch for update');
+
+          const { data: { session } } = await supabase.auth.getSession();
+
+          console.log('[Profile] Auth check - Session exists:', !!session);
+          console.log('[Profile] Auth check - Access token exists:', !!session?.access_token);
+          console.log('[Profile] Auth check - Token preview:', session?.access_token?.substring(0, 20));
+
+          if (!session?.access_token) {
+            throw new Error('No auth session available - please log in again');
+          }
+
+          const cacheBuster = `_cb=${Date.now()}`;
+          const updateUrl = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/profiles?id=eq.${user?.id}&${cacheBuster}`;
+
+          console.log('[Profile] Native PATCH to:', updateUrl);
+          console.log('[Profile] Authorization header:', `Bearer ${session.access_token.substring(0, 30)}...`);
+
+          const nativeUpdate = await fetchWithNativeFallback(
+            updateUrl,
+            {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+                'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+                'Prefer': 'return=minimal',
+                'Cache-Control': 'no-cache, no-store, must-revalidate'
+              },
+              body: JSON.stringify({ full_name: fullName })
+            }
+          );
+
+          console.log('[Profile] Native update response status:', nativeUpdate.status);
+
+          if (!nativeUpdate.ok) {
+            const errorText = await nativeUpdate.text();
+            console.error('[Profile] Native update failed:', nativeUpdate.status, errorText);
+            throw new Error(`Update failed with status ${nativeUpdate.status}`);
+          }
+
+          console.log('[Profile] Native Fetch update successful - Status:', nativeUpdate.status);
+
+          await updateProfile({ full_name: fullName });
+
+          setIsEditingName(false);
+          setSuccessMessage('Name updated successfully');
+          setTimeout(() => setSuccessMessage(''), 3000);
+        } else {
+          throw timeoutErr;
+        }
+      }
+
+    } catch (err: any) {
+      console.error('[Profile] Update error:', err);
+      setError(`Failed to update name: ${err.message}`);
     }
 
     setSaving(false);
@@ -387,9 +544,15 @@ const Profile = () => {
               </>
             )}
           </div>
-          {!profile.phone && (
+          {!profile.phone && !successMessage && (
             <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded-lg text-sm">
               Please add your phone number to complete bookings
+            </div>
+          )}
+          {successMessage && (
+            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-2 rounded-lg text-sm flex items-center gap-2">
+              <Check size={16} />
+              {successMessage}
             </div>
           )}
           {error && (

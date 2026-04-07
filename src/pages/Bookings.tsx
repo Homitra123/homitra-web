@@ -34,9 +34,20 @@ const Bookings = () => {
   }, [location]);
 
   useEffect(() => {
-    console.log('[Bookings] Re-rendering due to:', { userId: user?.id, isInitialLoad: isInitialLoadRef.current });
-    if (user && isInitialLoadRef.current) {
-      fetchBookings(true);
+    console.log('[Bookings] Re-rendering due to:', {
+      userId: user?.id,
+      isInitialLoad: isInitialLoadRef.current,
+      hasLoadedOnce: hasLoadedOnceRef.current
+    });
+
+    if (user) {
+      if (isInitialLoadRef.current) {
+        console.log('[Bookings] First mount - loading bookings');
+        fetchBookings(true);
+      } else if (hasLoadedOnceRef.current) {
+        console.log('[Bookings] Navigation return - silently refreshing in background');
+        fetchBookings(false);
+      }
     }
   }, [user?.id]);
 
@@ -79,7 +90,8 @@ const Bookings = () => {
         return;
       }
 
-      console.log('[Bookings] Session found, attempting Supabase client with 10s timeout');
+      const timeoutDuration = isInitial ? 2000 : 2000;
+      console.log(`[Bookings] Session found, attempting Supabase client with ${timeoutDuration}ms timeout`);
       setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fetching with RLS...' }));
 
       try {
@@ -89,7 +101,7 @@ const Bookings = () => {
             .select('*')
             .eq('user_id', user.id)
             .order('created_at', { ascending: false }),
-          10000,
+          timeoutDuration,
           'Supabase SDK timeout'
         );
 
