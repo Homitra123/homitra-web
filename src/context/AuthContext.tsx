@@ -45,6 +45,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return data;
   };
 
+  const createProfile = async (userId: string, email: string, fullName?: string) => {
+    console.log('[AuthContext] Creating new profile for user:', userId);
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .insert({
+        id: userId,
+        email: email,
+        full_name: fullName || null,
+        phone: null,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[AuthContext] Error creating profile:', error);
+      return null;
+    }
+
+    console.log('[AuthContext] Profile created successfully:', data);
+    return data;
+  };
+
   const refreshProfile = async () => {
     if (user) {
       const profileData = await fetchProfile(user.id);
@@ -58,7 +81,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(session?.user ?? null);
 
       if (session?.user) {
-        const profileData = await fetchProfile(session.user.id);
+        let profileData = await fetchProfile(session.user.id);
+
+        if (!profileData) {
+          console.log('[AuthContext] Profile not found, creating new profile');
+          profileData = await createProfile(
+            session.user.id,
+            session.user.email!,
+            session.user.user_metadata?.full_name
+          );
+        }
+
         setProfile(profileData);
       }
 
@@ -69,7 +102,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setUser(session?.user ?? null);
 
           if (session?.user) {
-            const profileData = await fetchProfile(session.user.id);
+            let profileData = await fetchProfile(session.user.id);
+
+            if (!profileData) {
+              console.log('[AuthContext] Profile not found on auth change, creating new profile');
+              profileData = await createProfile(
+                session.user.id,
+                session.user.email!,
+                session.user.user_metadata?.full_name
+              );
+            }
+
             setProfile(profileData);
           } else {
             setProfile(null);

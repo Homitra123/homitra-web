@@ -19,6 +19,13 @@ const Profile = () => {
     active: 0,
   });
   const [statsError, setStatsError] = useState(false);
+  const [debugInfo, setDebugInfo] = useState({
+    currentUserId: '',
+    fetchStatus: '',
+    rawDataCount: 0,
+    rlsBypassCount: 0,
+    timestamp: '',
+  });
 
   useEffect(() => {
     if (profile) {
@@ -37,16 +44,26 @@ const Profile = () => {
     console.log('[Profile] Starting stats fetch for user UUID:', user.id);
     setStatsError(false);
 
+    setDebugInfo({
+      currentUserId: user.id,
+      fetchStatus: 'Starting...',
+      rawDataCount: 0,
+      rlsBypassCount: 0,
+      timestamp: new Date().toLocaleTimeString(),
+    });
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!session || !session.access_token) {
         console.error('[Profile] Auth Token Missing - No session or access_token');
         setStatsError(true);
+        setDebugInfo(prev => ({ ...prev, fetchStatus: 'Auth Failed' }));
         return;
       }
 
       console.log('[Profile] Session found, attempting Supabase client with 10s timeout');
+      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fetching with RLS...' }));
 
       try {
         const { data: bookings, error: fetchError } = await withTimeout(
@@ -63,6 +80,7 @@ const Profile = () => {
         if (fetchError) {
           console.error('[Profile] Supabase error:', fetchError);
           setStatsError(true);
+          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Error: ' + fetchError.message, rawDataCount: 0 }));
         } else if (bookings) {
           const total = bookings.length;
           const completed = bookings.filter((b: any) => b.status === 'completed').length;
@@ -76,19 +94,39 @@ const Profile = () => {
             active,
           });
           setStatsError(false);
+          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Success', rawDataCount: total }));
 
           if (bookings.length === 0) {
-            console.log('[Profile] Empty result - No bookings found for stats for UUID:', user.id);
+            console.log('[Profile] Empty result - No bookings found, triggering RLS bypass diagnostic');
+            setDebugInfo(prev => ({ ...prev, fetchStatus: 'Empty, checking RLS bypass...' }));
+
+            try {
+              const { data: rlsBypassData } = await supabase
+                .from('bookings')
+                .select('*', { count: 'exact' });
+
+              console.log('[Profile] RLS Bypass Check - Total rows in table:', rlsBypassData?.length || 0);
+              setDebugInfo(prev => ({
+                ...prev,
+                fetchStatus: 'Empty (RLS OK)',
+                rlsBypassCount: rlsBypassData?.length || 0
+              }));
+            } catch (rlsErr) {
+              console.error('[Profile] RLS bypass check failed:', rlsErr);
+              setDebugInfo(prev => ({ ...prev, fetchStatus: 'Empty (RLS check failed)' }));
+            }
           } else {
             console.log('[Profile] Successfully calculated stats for', bookings.length, 'bookings');
           }
         } else {
           console.error('[Profile] Unexpected: No data and no error');
           setStatsError(true);
+          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Unexpected response' }));
         }
       } catch (timeoutErr: any) {
         if (timeoutErr.message === 'Supabase SDK timeout') {
           console.warn('[Profile] SDK timed out, switching to native fetch fallback');
+          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Timeout, trying fallback...' }));
           try {
             const fallbackData = await fetchWithNativeFallback('bookings', user.id, session.access_token);
             const total = fallbackData.length;
@@ -99,9 +137,11 @@ const Profile = () => {
 
             setBookingStats({ total, completed, active });
             setStatsError(false);
+            setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fallback Success', rawDataCount: total }));
           } catch (fallbackErr: any) {
             console.error('[Profile] Fallback also failed:', fallbackErr);
             setStatsError(true);
+            setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fallback Failed' }));
           }
         } else {
           throw timeoutErr;
@@ -110,6 +150,7 @@ const Profile = () => {
     } catch (err) {
       console.error('[Profile] Fetch error:', err);
       setStatsError(true);
+      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Network Error' }));
     }
   };
 
@@ -390,6 +431,17 @@ const Profile = () => {
       <div className="mt-8 text-center text-sm text-gray-500">
         <p>Homitra v1.0.0</p>
         <p className="mt-1">Premium Home Services</p>
+      </div>
+
+      <div className="mt-8 bg-black text-white p-6 rounded-xl font-mono text-xs">
+        <div className="font-bold mb-3 text-yellow-400">DEBUG INFO</div>
+        <div className="space-y-2">
+          <div><span className="text-gray-400">Current User UUID:</span> {debugInfo.currentUserId.slice(0, 20)}...</div>
+          <div><span className="text-gray-400">Fetch Status:</span> {debugInfo.fetchStatus}</div>
+          <div><span className="text-gray-400">Raw Data Count:</span> {debugInfo.rawDataCount}</div>
+          <div><span className="text-gray-400">RLS Bypass Count:</span> {debugInfo.rlsBypassCount}</div>
+          <div><span className="text-gray-400">Timestamp:</span> {debugInfo.timestamp}</div>
+        </div>
       </div>
     </div>
   );

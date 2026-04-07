@@ -89,11 +89,17 @@ const BookingSuccess = () => {
 
     const maxTimeoutTimer = setTimeout(() => {
       setLoading(false);
-    }, 10000);
+    }, 15000);
 
     const attemptFetch = async () => {
       setLoading(true);
       setError(false);
+
+      if (retryCount === 0) {
+        console.log('[BookingSuccess] Waiting 5 seconds for Supabase to index new booking...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
+
       const result = await fetchBooking();
 
       if (result) {
@@ -126,7 +132,8 @@ const BookingSuccess = () => {
     weekday: 'short',
     year: 'numeric',
     month: 'short',
-    day: 'numeric'
+    day: 'numeric',
+    timeZone: 'Asia/Kolkata'
   }) : '';
 
   const formattedTime = booking ? new Date(booking.created_at).toLocaleString('en-IN', {
@@ -251,13 +258,13 @@ const BookingSuccess = () => {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3">
-              <Link
-                to="/bookings"
+              <button
+                onClick={() => window.location.href = '/bookings'}
                 className="flex-1 bg-blue-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
               >
                 <span>View My Bookings</span>
                 <ArrowRight size={20} />
-              </Link>
+              </button>
               <Link
                 to="/"
                 className="flex-1 bg-gray-100 text-gray-900 py-4 px-6 rounded-xl font-semibold hover:bg-gray-200 transition-colors text-center"

@@ -13,6 +13,13 @@ const Bookings = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
+  const [debugInfo, setDebugInfo] = useState({
+    currentUserId: '',
+    fetchStatus: '',
+    rawDataCount: 0,
+    rlsBypassCount: 0,
+    timestamp: '',
+  });
 
   useEffect(() => {
     if (location.state?.showSuccess) {
@@ -39,6 +46,14 @@ const Bookings = () => {
     setError(false);
     setErrorMessage('');
 
+    setDebugInfo({
+      currentUserId: user.id,
+      fetchStatus: 'Starting...',
+      rawDataCount: 0,
+      rlsBypassCount: 0,
+      timestamp: new Date().toLocaleTimeString(),
+    });
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
 
@@ -46,11 +61,13 @@ const Bookings = () => {
         console.error('[Bookings] Auth Token Missing - No session or access_token');
         setError(true);
         setErrorMessage('Session expired. Please log out and log back in.');
+        setDebugInfo(prev => ({ ...prev, fetchStatus: 'Auth Failed' }));
         setLoading(false);
         return;
       }
 
       console.log('[Bookings] Session found, attempting Supabase client with 10s timeout');
+      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fetching with RLS...' }));
 
       try {
         const { data, error: fetchError } = await withTimeout(
@@ -70,33 +87,56 @@ const Bookings = () => {
           setError(true);
           setErrorMessage(`Error loading bookings: ${fetchError.message}`);
           setBookings([]);
+          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Error: ' + fetchError.message, rawDataCount: 0 }));
         } else if (data) {
           console.log('[Bookings] Successfully loaded', data.length, 'bookings for account UUID:', user.id);
           setBookings(data);
           setError(false);
+          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Success', rawDataCount: data.length }));
 
           if (data.length === 0) {
-            console.log('[Bookings] Empty result - No bookings found for this account');
+            console.log('[Bookings] Empty result - No bookings found, triggering RLS bypass diagnostic');
+            setDebugInfo(prev => ({ ...prev, fetchStatus: 'Empty, checking RLS bypass...' }));
+
+            try {
+              const { data: rlsBypassData } = await supabase
+                .from('bookings')
+                .select('*', { count: 'exact' });
+
+              console.log('[Bookings] RLS Bypass Check - Total rows in table:', rlsBypassData?.length || 0);
+              setDebugInfo(prev => ({
+                ...prev,
+                fetchStatus: 'Empty (RLS OK)',
+                rlsBypassCount: rlsBypassData?.length || 0
+              }));
+            } catch (rlsErr) {
+              console.error('[Bookings] RLS bypass check failed:', rlsErr);
+              setDebugInfo(prev => ({ ...prev, fetchStatus: 'Empty (RLS check failed)' }));
+            }
           }
         } else {
           console.error('[Bookings] Unexpected: No data and no error');
           setError(true);
           setErrorMessage('Unexpected response from server');
           setBookings([]);
+          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Unexpected response' }));
         }
       } catch (timeoutErr: any) {
         if (timeoutErr.message === 'Supabase SDK timeout') {
           console.warn('[Bookings] SDK timed out, switching to native fetch fallback');
+          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Timeout, trying fallback...' }));
           try {
             const fallbackData = await fetchWithNativeFallback('bookings', user.id, session.access_token);
             console.log('[Bookings] Fallback successful - loaded', fallbackData.length, 'bookings');
             setBookings(fallbackData);
             setError(false);
+            setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fallback Success', rawDataCount: fallbackData.length }));
           } catch (fallbackErr: any) {
             console.error('[Bookings] Fallback also failed:', fallbackErr);
             setError(true);
             setErrorMessage('Unable to load bookings. Network may be blocked.');
             setBookings([]);
+            setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fallback Failed' }));
           }
         } else {
           throw timeoutErr;
@@ -107,6 +147,7 @@ const Bookings = () => {
       setError(true);
       setErrorMessage('Network error. Please check your connection and try again.');
       setBookings([]);
+      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Network Error' }));
     }
 
     setLoading(false);
@@ -146,6 +187,7 @@ const Bookings = () => {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
+      timeZone: 'Asia/Kolkata',
     });
   };
 
@@ -228,18 +270,15 @@ const Bookings = () => {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center">
           <Calendar size={48} className="text-gray-300 mx-auto mb-4" />
           <h3 className="text-xl font-semibold text-gray-900 mb-2">
-            {bookings.length === 0 ? 'No bookings found for your account ID' : `No ${activeTab} bookings`}
+            {bookings.length === 0 ? 'No bookings found yet' : `No ${activeTab} bookings`}
           </h3>
           <p className="text-gray-600 mb-2">
             {bookings.length === 0
-              ? "You haven't made any bookings yet. Start booking services to see them here."
+              ? "Your first booking will appear here after payment."
               : activeTab === 'active'
               ? "You don't have any active bookings at the moment."
               : "You haven't completed any bookings yet."}
           </p>
-          {bookings.length === 0 && user && (
-            <p className="text-xs text-gray-400 font-mono mt-2">Account ID: {user.id.slice(0, 8)}...</p>
-          )}
         </div>
       ) : (
         <div className="space-y-4">
@@ -318,6 +357,17 @@ const Bookings = () => {
           ))}
         </div>
       )}
+
+      <div className="mt-8 bg-black text-white p-6 rounded-xl font-mono text-xs">
+        <div className="font-bold mb-3 text-yellow-400">DEBUG INFO</div>
+        <div className="space-y-2">
+          <div><span className="text-gray-400">Current User UUID:</span> {debugInfo.currentUserId.slice(0, 20)}...</div>
+          <div><span className="text-gray-400">Fetch Status:</span> {debugInfo.fetchStatus}</div>
+          <div><span className="text-gray-400">Raw Data Count:</span> {debugInfo.rawDataCount}</div>
+          <div><span className="text-gray-400">RLS Bypass Count:</span> {debugInfo.rlsBypassCount}</div>
+          <div><span className="text-gray-400">Timestamp:</span> {debugInfo.timestamp}</div>
+        </div>
+      </div>
     </div>
   );
 };
