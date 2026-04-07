@@ -1,26 +1,18 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Calendar, MapPin, Clock, User, CheckCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { supabase, Booking, getSupabaseUrl, getSupabaseAnonKey } from '../lib/supabase';
+import { supabase, Booking } from '../lib/supabase';
 
 const Bookings = () => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const location = useLocation();
-  const hasLoadedRef = useRef(false);
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
   const [showSuccessBanner, setShowSuccessBanner] = useState(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [contentLoading, setContentLoading] = useState(false);
   const [error, setError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [debugInfo, setDebugInfo] = useState({
-    currentUserId: '',
-    fetchStatus: '',
-    rawDataCount: 0,
-    timestamp: '',
-    loadAttempts: 0,
-  });
 
   useEffect(() => {
     if (location.state?.showSuccess) {
@@ -31,135 +23,36 @@ const Bookings = () => {
   }, [location]);
 
   useEffect(() => {
-    console.log('[Bookings] Component mounted, triggering fetch');
-    if (!hasLoadedRef.current) {
-      hasLoadedRef.current = true;
+    if (user) {
       fetchBookings();
     }
-  }, []);
+  }, [user]);
 
   const fetchBookings = async () => {
-    const attemptNumber = (debugInfo.loadAttempts || 0) + 1;
-
-    console.log('[Bookings] ==> Fetch attempt #', attemptNumber, 'starting...');
+    if (!user) return;
 
     setContentLoading(true);
     setError(false);
     setErrorMessage('');
 
     try {
-      console.log('[Bookings] Step 1: Getting fresh user from Supabase auth');
-      const { data: { user: freshUser }, error: userError } = await supabase.auth.getUser();
+      const { data, error: fetchError } = await supabase
+        .from('bookings')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
 
-      if (userError) {
-        console.error('[Bookings] Error getting user:', userError);
-        throw userError;
+      if (fetchError) {
+        throw new Error(`Database error: ${fetchError.message}`);
       }
 
-      if (!freshUser) {
-        console.error('[Bookings] No user found in session');
-        setError(true);
-        setErrorMessage('Please log in to view bookings.');
-        setDebugInfo(prev => ({ ...prev, currentUserId: 'N/A', fetchStatus: 'Not started' }));
-        setContentLoading(false);
-        return;
-      }
-
-      console.log('[Bookings] ✓ User found:', freshUser.id);
-
-      setDebugInfo(prev => ({
-        ...prev,
-        currentUserId: freshUser.id,
-        fetchStatus: 'Fetching...',
-        rawDataCount: 0,
-        timestamp: new Date().toLocaleTimeString(),
-        loadAttempts: attemptNumber,
-      }));
-
-      console.log('[Bookings] Step 2: Getting session for auth token');
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-
-      if (sessionError) {
-        console.error('[Bookings] Error getting session:', sessionError);
-        throw sessionError;
-      }
-
-      if (!session || !session.access_token) {
-        console.error('[Bookings] No valid session or access token');
-        setError(true);
-        setErrorMessage('Session expired. Please log out and log back in.');
-        setDebugInfo(prev => ({ ...prev, fetchStatus: 'Auth Failed' }));
-        setContentLoading(false);
-        return;
-      }
-
-      console.log('[Bookings] ✓ Session valid, token length:', session.access_token.length);
-
-      const baseUrl = getSupabaseUrl();
-      const anonKey = getSupabaseAnonKey();
-
-      console.log('[Bookings] Step 3: Constructing HTTPS URL');
-      console.log('[Bookings] Base URL:', baseUrl);
-
-      const urlObject = new URL(`${baseUrl}/rest/v1/bookings`);
-      urlObject.protocol = 'https:';
-      urlObject.searchParams.set('user_id', `eq.${freshUser.id}`);
-      urlObject.searchParams.set('order', 'created_at.desc');
-
-      const finalUrl = urlObject.toString();
-      console.log('[Bookings] ✓ Final URL:', finalUrl);
-      console.log('[Bookings] URL protocol:', urlObject.protocol);
-
-      console.log('[Bookings] Step 4: Executing fetch with 5s timeout');
-
-      const response = await Promise.race([
-        fetch(finalUrl, {
-          method: 'GET',
-          mode: 'cors',
-          credentials: 'omit',
-          headers: {
-            'apikey': anonKey,
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-            'Origin': 'https://www.homitra.co.in',
-          },
-        }),
-        new Promise<Response>((_, reject) =>
-          setTimeout(() => reject(new Error('Fetch timeout after 5s')), 5000)
-        ),
-      ]) as Response;
-
-      console.log('[Bookings] ✓ Response received, status:', response.status);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[Bookings] HTTP error:', response.status, errorText);
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const data = await response.json();
-      console.log('[Bookings] ✓ Successfully loaded', data.length, 'bookings');
-      console.log('[Bookings] Booking IDs:', data.map((b: Booking) => b.id.slice(0, 8)).join(', '));
-
-      setBookings(data);
-      setError(false);
-      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Success', rawDataCount: data.length }));
+      setBookings(data || []);
     } catch (err: any) {
-      console.error('[Bookings] ✗ Fatal error:', err);
-      console.error('[Bookings] Error details:', {
-        message: err.message,
-        name: err.name,
-        stack: err.stack
-      });
-
-      if (bookings.length === 0) {
-        setError(true);
-        setErrorMessage('Unable to load bookings. Please try again.');
-      }
-      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Error: ' + err.message }));
+      console.error('[Bookings] Error fetching bookings:', err);
+      setError(true);
+      setErrorMessage('Unable to load bookings. Please try again.');
     } finally {
       setContentLoading(false);
-      console.log('[Bookings] Fetch complete, contentLoading set to false');
     }
   };
 
@@ -202,20 +95,7 @@ const Bookings = () => {
   };
 
   return (
-    <>
-      <div className="fixed bottom-4 left-4 right-4 bg-black text-white p-4 rounded-xl font-mono text-xs shadow-2xl z-50 max-w-2xl mx-auto">
-        <div className="font-bold mb-2 text-yellow-400">DEBUG INFO - PERSISTENT</div>
-        <div className="space-y-1">
-          <div><span className="text-gray-400">Current User UUID:</span> {debugInfo.currentUserId.slice(0, 20) || 'N/A'}...</div>
-          <div><span className="text-gray-400">Fetch Status:</span> {debugInfo.fetchStatus || 'Not started'}</div>
-          <div><span className="text-gray-400">Raw Data Count:</span> {debugInfo.rawDataCount}</div>
-          <div><span className="text-gray-400">Timestamp:</span> {debugInfo.timestamp || 'N/A'}</div>
-          <div><span className="text-gray-400">Load Attempts:</span> {debugInfo.loadAttempts}</div>
-          <div><span className="text-gray-400">Content Loading:</span> {contentLoading ? 'TRUE' : 'FALSE'}</div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 pb-24">
+    <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
         {showSuccessBanner && (
           <div className="mb-6 bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center space-x-3 animate-in fade-in slide-in-from-top-4 duration-500">
             <CheckCircle size={24} className="text-green-600 flex-shrink-0" />
@@ -256,11 +136,11 @@ const Bookings = () => {
           </div>
         </div>
 
-        {contentLoading ? (
+        {(contentLoading || authLoading) ? (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
             <div className="flex items-center justify-center space-x-3">
               <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-              <p className="text-gray-600 text-sm">Checking for bookings...</p>
+              <p className="text-gray-600 text-sm">{authLoading ? 'Checking authentication...' : 'Checking for bookings...'}</p>
             </div>
           </div>
         ) : error && bookings.length === 0 ? (
@@ -370,8 +250,7 @@ const Bookings = () => {
             ))}
           </div>
         )}
-      </div>
-    </>
+    </div>
   );
 };
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { supabase, getSupabaseUrl, getSupabaseAnonKey } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 declare global {
   interface Window {
@@ -44,17 +44,17 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
 
   const completeBooking = async (razorpayPaymentId: string) => {
     try {
-      console.log('=== FIRE AND FORGET BOOKING SAVE ===');
-      console.log('Razorpay Payment ID received:', razorpayPaymentId);
+      console.log('=== SAVING BOOKING TO DATABASE ===');
+      console.log('Razorpay Payment ID:', razorpayPaymentId);
 
       if (!user?.id) {
-        console.error('User is not authenticated');
-        return { success: false };
+        console.error('User not authenticated');
+        throw new Error('User not authenticated');
       }
 
       if (!bookingData.date || !bookingData.timeSlot || !bookingData.location) {
         console.error('Missing required booking fields');
-        return { success: false };
+        throw new Error('Missing required booking information');
       }
 
       const bookingRecord = {
@@ -69,50 +69,28 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
         location: bookingData.location,
         address: bookingData.address || bookingData.location,
         price: amount,
-        status: 'pending',
+        status: 'confirmed',
         payment_id: razorpayPaymentId,
       };
 
-      console.log('Booking record:', bookingRecord);
+      console.log('Inserting booking with Supabase client:', bookingRecord);
 
-      const baseUrl = getSupabaseUrl();
-      const anonKey = getSupabaseAnonKey();
+      const { data, error } = await supabase
+        .from('bookings')
+        .insert(bookingRecord)
+        .select()
+        .single();
 
-      const urlObject = new URL(`${baseUrl}/rest/v1/bookings`);
-      urlObject.protocol = 'https:';
+      if (error) {
+        console.error('Database error:', error);
+        throw error;
+      }
 
-      console.log('Supabase endpoint (HTTPS):', urlObject.toString());
-      console.log('[PaymentModal] Using hardcoded anon key:', anonKey.substring(0, 20) + '...');
-
-      fetch(urlObject.toString(), {
-        method: 'POST',
-        headers: {
-          'apikey': anonKey,
-          'Authorization': `Bearer ${anonKey}`,
-          'Content-Type': 'application/json',
-          'Origin': 'https://www.homitra.co.in',
-        },
-        body: JSON.stringify(bookingRecord),
-      }).then(response => {
-        console.log('Background insert status:', response.status);
-        if (response.ok || response.status === 409) {
-          console.log('✓ Booking saved successfully (or already exists)');
-        } else {
-          response.text().then(text => {
-            console.error('✗ Booking save failed:', response.status, text);
-          });
-        }
-      }).catch(err => {
-        console.error('Background insert error:', err);
-      });
-
-      console.log('Fire-and-forget request sent. Waiting 1 second before redirect...');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      return { success: true };
+      console.log('✓ Booking saved successfully:', data.id);
+      return { success: true, bookingId: data.id };
     } catch (error: any) {
-      console.error('Error preparing booking:', error);
-      return { success: false };
+      console.error('✗ Error saving booking:', error);
+      throw error;
     }
   };
 
@@ -143,14 +121,23 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
           console.log('Payment response:', response);
           console.log('Razorpay Payment ID:', response.razorpay_payment_id);
 
-          await completeBooking(response.razorpay_payment_id);
+          try {
+            const result = await completeBooking(response.razorpay_payment_id);
 
-          console.log('Redirecting to success page...');
+            console.log('Booking saved, redirecting to success page...');
 
-          setIsProcessing(false);
-          onClose();
+            setIsProcessing(false);
+            onClose();
 
-          navigate('/booking-success', { replace: true });
+            navigate('/booking-success', {
+              replace: true,
+              state: { bookingId: result.bookingId }
+            });
+          } catch (error: any) {
+            console.error('Failed to complete booking:', error);
+            setError('Payment successful but booking failed to save. Please contact support.');
+            setIsProcessing(false);
+          }
         },
         prefill: {
           name: profile.full_name || '',

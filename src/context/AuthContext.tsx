@@ -76,11 +76,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    (async () => {
+    let subscription: any = null;
+
+    const initAuth = async () => {
+      console.log('[AuthContext] Initializing auth...');
       const { data: { session } } = await supabase.auth.getSession();
+      console.log('[AuthContext] Session:', session?.user?.id || 'No session');
       setUser(session?.user ?? null);
 
       if (session?.user) {
+        console.log('[AuthContext] User found, fetching profile...');
         let profileData = await fetchProfile(session.user.id);
 
         if (!profileData) {
@@ -90,15 +95,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             session.user.email!,
             session.user.user_metadata?.full_name
           );
+        } else {
+          console.log('[AuthContext] Profile loaded:', profileData.id);
         }
 
         setProfile(profileData);
       }
 
+      console.log('[AuthContext] Auth initialization complete, setting loading to false');
       setLoading(false);
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(
-        async (_event, session) => {
+      const { data } = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          console.log('[AuthContext] Auth state changed:', event, session?.user?.id || 'No user');
           setUser(session?.user ?? null);
 
           if (session?.user) {
@@ -120,10 +129,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
       );
 
-      return () => {
+      subscription = data.subscription;
+    };
+
+    initAuth();
+
+    return () => {
+      if (subscription) {
         subscription.unsubscribe();
-      };
-    })();
+      }
+    };
   }, []);
 
   const signUp = async (email: string, password: string, fullName: string) => {
