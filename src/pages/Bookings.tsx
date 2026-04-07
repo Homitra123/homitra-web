@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Calendar, MapPin, Clock, User, CheckCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -7,6 +7,8 @@ import { supabase, Booking, withTimeout, fetchWithNativeFallback } from '../lib/
 const Bookings = () => {
   const { user } = useAuth();
   const location = useLocation();
+  const isInitialLoadRef = useRef(true);
+  const hasLoadedOnceRef = useRef(false);
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
   const [showSuccessBanner, setShowSuccessBanner] = useState(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -19,6 +21,8 @@ const Bookings = () => {
     rawDataCount: 0,
     rlsBypassCount: 0,
     timestamp: '',
+    loadAttempts: 0,
+    isInitialLoad: true,
   });
 
   useEffect(() => {
@@ -30,29 +34,38 @@ const Bookings = () => {
   }, [location]);
 
   useEffect(() => {
-    if (user) {
-      fetchBookings();
+    console.log('[Bookings] Re-rendering due to:', { userId: user?.id, isInitialLoad: isInitialLoadRef.current });
+    if (user && isInitialLoadRef.current) {
+      fetchBookings(true);
     }
-  }, [user]);
+  }, [user?.id]);
 
-  const fetchBookings = async () => {
+  const fetchBookings = async (isInitial = false) => {
     if (!user) {
       console.log('[Bookings] No user found');
       return;
     }
 
-    console.log('[Bookings] Starting fetch for user UUID:', user.id);
-    setLoading(true);
+    const attemptNumber = (debugInfo.loadAttempts || 0) + 1;
+    console.log('[Bookings] Starting fetch #', attemptNumber, 'for user UUID:', user.id, '| isInitial:', isInitial);
+
+    if (isInitial && isInitialLoadRef.current) {
+      setLoading(true);
+    }
+
     setError(false);
     setErrorMessage('');
 
-    setDebugInfo({
+    setDebugInfo(prev => ({
+      ...prev,
       currentUserId: user.id,
       fetchStatus: 'Starting...',
       rawDataCount: 0,
       rlsBypassCount: 0,
       timestamp: new Date().toLocaleTimeString(),
-    });
+      loadAttempts: attemptNumber,
+      isInitialLoad: isInitial,
+    }));
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -99,9 +112,13 @@ const Bookings = () => {
             setDebugInfo(prev => ({ ...prev, fetchStatus: 'Empty, checking RLS bypass...' }));
 
             try {
-              const { data: rlsBypassData } = await supabase
-                .from('bookings')
-                .select('*', { count: 'exact' });
+              const { data: rlsBypassData } = await withTimeout(
+                supabase
+                  .from('bookings')
+                  .select('*', { count: 'exact' }),
+                10000,
+                'RLS bypass check timeout'
+              );
 
               console.log('[Bookings] RLS Bypass Check - Total rows in table:', rlsBypassData?.length || 0);
               setDebugInfo(prev => ({
@@ -111,7 +128,11 @@ const Bookings = () => {
               }));
             } catch (rlsErr) {
               console.error('[Bookings] RLS bypass check failed:', rlsErr);
-              setDebugInfo(prev => ({ ...prev, fetchStatus: 'Empty (RLS check failed)' }));
+              setDebugInfo(prev => ({
+                ...prev,
+                fetchStatus: 'Empty (RLS check failed)',
+                rlsBypassCount: 0
+              }));
             }
           }
         } else {
@@ -144,13 +165,22 @@ const Bookings = () => {
       }
     } catch (err) {
       console.error('[Bookings] Fetch error:', err);
-      setError(true);
-      setErrorMessage('Network error. Please check your connection and try again.');
-      setBookings([]);
-      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Network Error' }));
-    }
 
-    setLoading(false);
+      if (isInitial) {
+        setError(true);
+        setErrorMessage('Network error. Please check your connection and try again.');
+        setBookings([]);
+      }
+
+      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Network Error' }));
+    } finally {
+      if (isInitial && isInitialLoadRef.current) {
+        console.log('[Bookings] Initial load complete, locking loading state permanently');
+        setLoading(false);
+        isInitialLoadRef.current = false;
+        hasLoadedOnceRef.current = true;
+      }
+    }
   };
 
   const activeBookings = bookings.filter(
@@ -191,40 +221,49 @@ const Bookings = () => {
     });
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading bookings...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="text-center max-w-md">
-          <div className="bg-red-50 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-            <Calendar size={32} className="text-red-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Unable to Load Bookings</h2>
-          <p className="text-gray-600 mb-6">
-            {errorMessage || 'We couldn\'t fetch your bookings. Please try again.'}
-          </p>
-          <button
-            onClick={fetchBookings}
-            className="bg-blue-600 text-white py-3 px-8 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
-          >
-            Refresh
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
+    <>
+      <div className="fixed bottom-4 left-4 right-4 bg-black text-white p-4 rounded-xl font-mono text-xs shadow-2xl z-50 max-w-2xl mx-auto">
+        <div className="font-bold mb-2 text-yellow-400">DEBUG INFO - PERSISTENT</div>
+        <div className="space-y-1">
+          <div><span className="text-gray-400">Current User UUID:</span> {debugInfo.currentUserId.slice(0, 20) || 'N/A'}...</div>
+          <div><span className="text-gray-400">Fetch Status:</span> {debugInfo.fetchStatus || 'Not started'}</div>
+          <div><span className="text-gray-400">Raw Data Count:</span> {debugInfo.rawDataCount}</div>
+          <div><span className="text-gray-400">RLS Bypass Count:</span> {debugInfo.rlsBypassCount}</div>
+          <div><span className="text-gray-400">Timestamp:</span> {debugInfo.timestamp || 'N/A'}</div>
+          <div><span className="text-gray-400">Load Attempts:</span> {debugInfo.loadAttempts}</div>
+          <div><span className="text-gray-400">Is Initial Load:</span> {debugInfo.isInitialLoad ? 'YES' : 'NO'}</div>
+          <div><span className="text-gray-400">Loading State:</span> {loading ? 'TRUE' : 'FALSE'}</div>
+          <div><span className="text-gray-400">Has Loaded Once:</span> {hasLoadedOnceRef.current ? 'YES' : 'NO'}</div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="min-h-screen flex items-center justify-center pb-32">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading bookings...</p>
+          </div>
+        </div>
+      ) : error ? (
+        <div className="min-h-screen flex items-center justify-center px-4 pb-32">
+          <div className="text-center max-w-md">
+            <div className="bg-red-50 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+              <Calendar size={32} className="text-red-600" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Unable to Load Bookings</h2>
+            <p className="text-gray-600 mb-6">
+              {errorMessage || 'We couldn\'t fetch your bookings. Please try again.'}
+            </p>
+            <button
+              onClick={() => fetchBookings(true)}
+              className="bg-blue-600 text-white py-3 px-8 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+      ) : (
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 pb-24">
       {showSuccessBanner && (
         <div className="mb-6 bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center space-x-3 animate-in fade-in slide-in-from-top-4 duration-500">
@@ -357,18 +396,9 @@ const Bookings = () => {
           ))}
         </div>
       )}
-
-      <div className="mt-8 bg-black text-white p-6 rounded-xl font-mono text-xs">
-        <div className="font-bold mb-3 text-yellow-400">DEBUG INFO</div>
-        <div className="space-y-2">
-          <div><span className="text-gray-400">Current User UUID:</span> {debugInfo.currentUserId.slice(0, 20)}...</div>
-          <div><span className="text-gray-400">Fetch Status:</span> {debugInfo.fetchStatus}</div>
-          <div><span className="text-gray-400">Raw Data Count:</span> {debugInfo.rawDataCount}</div>
-          <div><span className="text-gray-400">RLS Bypass Count:</span> {debugInfo.rlsBypassCount}</div>
-          <div><span className="text-gray-400">Timestamp:</span> {debugInfo.timestamp}</div>
-        </div>
-      </div>
     </div>
+      )}
+    </>
   );
 };
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Mail, Phone, ChevronRight, LogOut, Bell, Shield, HelpCircle, CreditCard as Edit2, X, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -7,12 +7,15 @@ import { supabase, withTimeout, fetchWithNativeFallback } from '../lib/supabase'
 const Profile = () => {
   const { user, profile, signOut, updateProfile } = useAuth();
   const navigate = useNavigate();
+  const isInitialLoadRef = useRef(true);
+  const hasLoadedStatsRef = useRef(false);
   const [isEditingPhone, setIsEditingPhone] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
   const [fullName, setFullName] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [loadingStats, setLoadingStats] = useState(true);
   const [bookingStats, setBookingStats] = useState({
     total: 0,
     completed: 0,
@@ -25,32 +28,46 @@ const Profile = () => {
     rawDataCount: 0,
     rlsBypassCount: 0,
     timestamp: '',
+    loadAttempts: 0,
+    isInitialLoad: true,
   });
 
   useEffect(() => {
+    console.log('[Profile] Re-rendering due to:', { userId: user?.id, profileId: profile?.id });
     if (profile) {
       setPhoneNumber(profile.phone || '');
       setFullName(profile.full_name || '');
-      fetchBookingStats();
+      if (isInitialLoadRef.current) {
+        fetchBookingStats(true);
+      }
     }
-  }, [profile]);
+  }, [user?.id, profile?.id]);
 
-  const fetchBookingStats = async () => {
+  const fetchBookingStats = async (isInitial = false) => {
     if (!user) {
       console.log('[Profile] No user found');
       return;
     }
 
-    console.log('[Profile] Starting stats fetch for user UUID:', user.id);
+    const attemptNumber = (debugInfo.loadAttempts || 0) + 1;
+    console.log('[Profile] Starting stats fetch #', attemptNumber, 'for user UUID:', user.id, '| isInitial:', isInitial);
+
+    if (isInitial && isInitialLoadRef.current) {
+      setLoadingStats(true);
+    }
+
     setStatsError(false);
 
-    setDebugInfo({
+    setDebugInfo(prev => ({
+      ...prev,
       currentUserId: user.id,
       fetchStatus: 'Starting...',
       rawDataCount: 0,
       rlsBypassCount: 0,
       timestamp: new Date().toLocaleTimeString(),
-    });
+      loadAttempts: attemptNumber,
+      isInitialLoad: isInitial,
+    }));
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -101,9 +118,13 @@ const Profile = () => {
             setDebugInfo(prev => ({ ...prev, fetchStatus: 'Empty, checking RLS bypass...' }));
 
             try {
-              const { data: rlsBypassData } = await supabase
-                .from('bookings')
-                .select('*', { count: 'exact' });
+              const { data: rlsBypassData } = await withTimeout(
+                supabase
+                  .from('bookings')
+                  .select('*', { count: 'exact' }),
+                10000,
+                'RLS bypass check timeout'
+              );
 
               console.log('[Profile] RLS Bypass Check - Total rows in table:', rlsBypassData?.length || 0);
               setDebugInfo(prev => ({
@@ -113,7 +134,11 @@ const Profile = () => {
               }));
             } catch (rlsErr) {
               console.error('[Profile] RLS bypass check failed:', rlsErr);
-              setDebugInfo(prev => ({ ...prev, fetchStatus: 'Empty (RLS check failed)' }));
+              setDebugInfo(prev => ({
+                ...prev,
+                fetchStatus: 'Empty (RLS check failed)',
+                rlsBypassCount: 0
+              }));
             }
           } else {
             console.log('[Profile] Successfully calculated stats for', bookings.length, 'bookings');
@@ -149,8 +174,19 @@ const Profile = () => {
       }
     } catch (err) {
       console.error('[Profile] Fetch error:', err);
-      setStatsError(true);
+
+      if (isInitial) {
+        setStatsError(true);
+      }
+
       setDebugInfo(prev => ({ ...prev, fetchStatus: 'Network Error' }));
+    } finally {
+      if (isInitial && isInitialLoadRef.current) {
+        console.log('[Profile] Initial stats load complete, locking loading state permanently');
+        setLoadingStats(false);
+        isInitialLoadRef.current = false;
+        hasLoadedStatsRef.current = true;
+      }
     }
   };
 
@@ -364,34 +400,43 @@ const Profile = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 mb-6">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 mb-6 relative">
         <h3 className="text-xl font-bold text-gray-900 mb-4">Booking Statistics</h3>
-        {statsError ? (
+        {loadingStats ? (
           <div className="text-center py-6">
-            <p className="text-gray-600 mb-1">Unable to load booking statistics</p>
-            <p className="text-sm text-gray-500 mb-4">Check console for details</p>
-            <button
-              onClick={fetchBookingStats}
-              className="bg-blue-600 text-white py-2 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors text-sm"
-            >
-              Retry
-            </button>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+            <p className="text-sm text-gray-500">Loading stats...</p>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-4">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-blue-600 mb-1">{bookingStats.total}</div>
-              <div className="text-sm text-gray-600">Total</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-green-600 mb-1">{bookingStats.completed}</div>
-              <div className="text-sm text-gray-600">Completed</div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-orange-600 mb-1">{bookingStats.active}</div>
-              <div className="text-sm text-gray-600">Active</div>
-            </div>
-          </div>
+          <>
+            {statsError ? (
+              <div className="text-center py-6">
+                <p className="text-gray-600 mb-1">Unable to load booking statistics</p>
+                <p className="text-sm text-gray-500 mb-4">Check console for details</p>
+                <button
+                  onClick={() => fetchBookingStats(true)}
+                  className="bg-blue-600 text-white py-2 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors text-sm"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-4">
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-blue-600 mb-1">{bookingStats.total}</div>
+                  <div className="text-sm text-gray-600">Total</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-green-600 mb-1">{bookingStats.completed}</div>
+                  <div className="text-sm text-gray-600">Completed</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-3xl font-bold text-orange-600 mb-1">{bookingStats.active}</div>
+                  <div className="text-sm text-gray-600">Active</div>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -434,13 +479,17 @@ const Profile = () => {
       </div>
 
       <div className="mt-8 bg-black text-white p-6 rounded-xl font-mono text-xs">
-        <div className="font-bold mb-3 text-yellow-400">DEBUG INFO</div>
+        <div className="font-bold mb-3 text-yellow-400">DEBUG INFO - PERSISTENT</div>
         <div className="space-y-2">
-          <div><span className="text-gray-400">Current User UUID:</span> {debugInfo.currentUserId.slice(0, 20)}...</div>
-          <div><span className="text-gray-400">Fetch Status:</span> {debugInfo.fetchStatus}</div>
+          <div><span className="text-gray-400">Current User UUID:</span> {debugInfo.currentUserId.slice(0, 20) || 'N/A'}...</div>
+          <div><span className="text-gray-400">Fetch Status:</span> {debugInfo.fetchStatus || 'Not started'}</div>
           <div><span className="text-gray-400">Raw Data Count:</span> {debugInfo.rawDataCount}</div>
           <div><span className="text-gray-400">RLS Bypass Count:</span> {debugInfo.rlsBypassCount}</div>
-          <div><span className="text-gray-400">Timestamp:</span> {debugInfo.timestamp}</div>
+          <div><span className="text-gray-400">Timestamp:</span> {debugInfo.timestamp || 'N/A'}</div>
+          <div><span className="text-gray-400">Load Attempts:</span> {debugInfo.loadAttempts}</div>
+          <div><span className="text-gray-400">Is Initial Load:</span> {debugInfo.isInitialLoad ? 'YES' : 'NO'}</div>
+          <div><span className="text-gray-400">Loading State:</span> {loadingStats ? 'TRUE' : 'FALSE'}</div>
+          <div><span className="text-gray-400">Has Loaded Once:</span> {hasLoadedStatsRef.current ? 'YES' : 'NO'}</div>
         </div>
       </div>
     </div>

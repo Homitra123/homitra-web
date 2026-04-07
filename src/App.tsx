@@ -3,6 +3,7 @@ import { AuthProvider } from './context/AuthContext';
 import { AppProvider } from './context/AppContext';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
+import ErrorBoundary from './components/ErrorBoundary';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import ServiceBooking from './pages/ServiceBooking';
@@ -14,9 +15,10 @@ import BookingSuccess from './pages/BookingSuccess';
 
 function App() {
   return (
-    <AuthProvider>
-      <AppProvider>
-        <Router>
+    <ErrorBoundary>
+      <AuthProvider>
+        <AppProvider>
+          <Router>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route
@@ -82,9 +84,10 @@ function App() {
               }
             />
           </Routes>
-        </Router>
-      </AppProvider>
-    </AuthProvider>
+          </Router>
+        </AppProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
