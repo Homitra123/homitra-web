@@ -1,32 +1,30 @@
 import { createClient } from '@supabase/supabase-js';
 
-const HARDCODED_URL = 'https://talcyiifgehpcphwotej.supabase.co';
-const HARDCODED_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRhbGN5aWlmZ2VocGNwaHdvdGVqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMDIzNTksImV4cCI6MjA5MDY3ODM1OX0.fkq4NgKspCK5xoYakoEK93XCTxj1CYUeR845quadapc';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-console.log('[Supabase] Client initialized with hardcoded production URL:', HARDCODED_URL);
-console.log('[Supabase] Using ANON key:', HARDCODED_KEY.substring(0, 20) + '...');
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables');
+}
 
-export const supabase = createClient(
-  HARDCODED_URL,
-  HARDCODED_KEY,
-  {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      storageKey: 'homitra-auth-token',
-      storage: window.localStorage,
+console.log('[Supabase] Client initialized with URL:', supabaseUrl);
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    storageKey: 'homitra-auth-token',
+    storage: window.localStorage,
+  },
+  global: {
+    headers: {
+      'X-Client-Info': 'homitra-web-app',
     },
-    global: {
-      fetch: window.fetch.bind(window),
-      headers: {
-        'X-Client-Info': 'homitra-web-app',
-      },
-    },
-  }
-);
+  },
+});
 
-export const getSupabaseUrl = () => HARDCODED_URL;
-export const getSupabaseAnonKey = () => HARDCODED_KEY;
+export const getSupabaseUrl = () => supabaseUrl;
+export const getSupabaseAnonKey = () => supabaseAnonKey;
 
 export const withTimeout = async <T>(
   promise: Promise<T>,
@@ -57,15 +55,18 @@ export async function fetchWithNativeFallback(
   userIdOrOptions: string | RequestInit,
   accessToken?: string
 ): Promise<any[] | Response> {
+  const url = getSupabaseUrl();
+  const apikey = getSupabaseAnonKey();
+
   if (typeof userIdOrOptions === 'string' && accessToken) {
     console.log(`[Fallback] Using native fetch for table ${tableOrUrl}`);
 
-    const url = `${HARDCODED_URL}/rest/v1/${tableOrUrl}?user_id=eq.${userIdOrOptions}&order=created_at.desc`;
+    const fetchUrl = `${url}/rest/v1/${tableOrUrl}?user_id=eq.${userIdOrOptions}&order=created_at.desc`;
 
-    const response = await fetch(url, {
+    const response = await fetch(fetchUrl, {
       method: 'GET',
       headers: {
-        'apikey': HARDCODED_KEY,
+        'apikey': apikey,
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
         'Prefer': 'return=representation',

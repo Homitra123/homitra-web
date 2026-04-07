@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { CheckCircle, Calendar, Clock, MapPin, IndianRupee, ArrowRight } from 'lucide-react';
-import { supabase, getSupabaseUrl, getSupabaseAnonKey } from '../lib/supabase';
+import { supabase, getSupabaseUrl, getSupabaseAnonKey, withTimeout, fetchWithNativeFallback } from '../lib/supabase';
 
 interface BookingDetails {
   id: string;
@@ -39,45 +39,72 @@ const BookingSuccess = () => {
         return;
       }
 
-      const baseUrl = getSupabaseUrl();
-      const anonKey = getSupabaseAnonKey();
+      console.log('[BookingSuccess] Fetching with 2s timeout, bookingId:', bookingId);
 
-      console.log('[BookingSuccess] Using hardcoded URL:', baseUrl);
-      console.log('[BookingSuccess] Using hardcoded anon key:', anonKey.substring(0, 20) + '...');
+      try {
+        const query = bookingId
+          ? supabase.from('bookings').select('*').eq('id', bookingId).limit(1)
+          : supabase.from('bookings').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1);
 
-      let url: string;
-      if (bookingId) {
-        url = `${baseUrl}/rest/v1/bookings?id=eq.${bookingId}&limit=1`;
-      } else {
-        url = `${baseUrl}/rest/v1/bookings?user_id=eq.${user.id}&order=created_at.desc&limit=1`;
-      }
+        const { data, error } = await withTimeout(query, 2000, 'BookingSuccess SDK timeout');
 
-      const response = await fetch(url, {
-        method: 'GET',
-        mode: 'cors',
-        credentials: 'omit',
-        referrerPolicy: 'no-referrer-when-downgrade',
-        headers: {
-          'apikey': anonKey,
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-      });
+        if (error) {
+          console.error('[BookingSuccess] SDK error:', error);
+          throw new Error('SDK failed');
+        }
 
-      if (!response.ok) {
-        console.error('Error fetching booking:', response.status, response.statusText);
-        return null;
-      } else {
-        const data = await response.json();
         if (data && data.length > 0) {
+          console.log('[BookingSuccess] SDK success:', data[0]);
           return data[0];
         } else {
-          console.log('No booking found yet, attempt:', retryCount + 1);
+          console.log('[BookingSuccess] No booking found yet, attempt:', retryCount + 1);
+          return null;
+        }
+      } catch (timeoutErr: any) {
+        console.warn('[BookingSuccess] SDK timed out or failed, using native fetch fallback');
+
+        const baseUrl = getSupabaseUrl();
+        const anonKey = getSupabaseAnonKey();
+
+        let url: string;
+        if (bookingId) {
+          url = `${baseUrl}/rest/v1/bookings?id=eq.${bookingId}&limit=1`;
+        } else {
+          url = `${baseUrl}/rest/v1/bookings?user_id=eq.${user.id}&order=created_at.desc&limit=1`;
+        }
+
+        const response = await Promise.race([
+          fetch(url, {
+            method: 'GET',
+            mode: 'cors',
+            credentials: 'omit',
+            headers: {
+              'apikey': anonKey,
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+          }),
+          new Promise<Response>((_, reject) =>
+            setTimeout(() => reject(new Error('Fallback timeout')), 2000)
+          ),
+        ]) as Response;
+
+        if (!response.ok) {
+          console.error('[BookingSuccess] Fallback error:', response.status);
+          return null;
+        }
+
+        const data = await response.json();
+        if (data && data.length > 0) {
+          console.log('[BookingSuccess] Fallback success:', data[0]);
+          return data[0];
+        } else {
+          console.log('[BookingSuccess] No booking found via fallback');
           return null;
         }
       }
     } catch (err) {
-      console.error('Error:', err);
+      console.error('[BookingSuccess] Error:', err);
       return null;
     }
   };
@@ -258,13 +285,13 @@ const BookingSuccess = () => {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                onClick={() => window.location.href = '/bookings'}
+              <Link
+                to="/bookings"
                 className="flex-1 bg-blue-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
               >
                 <span>View My Bookings</span>
                 <ArrowRight size={20} />
-              </button>
+              </Link>
               <Link
                 to="/"
                 className="flex-1 bg-gray-100 text-gray-900 py-4 px-6 rounded-xl font-semibold hover:bg-gray-200 transition-colors text-center"

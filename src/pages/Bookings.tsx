@@ -60,7 +60,7 @@ const Bookings = () => {
     const attemptNumber = (debugInfo.loadAttempts || 0) + 1;
     console.log('[Bookings] Starting fetch #', attemptNumber, 'for user UUID:', user.id, '| isInitial:', isInitial);
 
-    if (isInitial && isInitialLoadRef.current) {
+    if (isInitial && isInitialLoadRef.current && bookings.length === 0) {
       setLoading(true);
     }
 
@@ -95,24 +95,28 @@ const Bookings = () => {
       setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fetching with RLS...' }));
 
       try {
-        const { data, error: fetchError } = await withTimeout(
-          supabase
-            .from('bookings')
-            .select('*')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: false }),
-          timeoutDuration,
-          'Supabase SDK timeout'
-        );
+        const queryPromise = supabase
+          .from('bookings')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        const { data, error: fetchError } = await Promise.race([
+          queryPromise,
+          new Promise<{ data: null; error: any }>((_, reject) =>
+            setTimeout(() => reject(new Error('Supabase SDK timeout')), timeoutDuration)
+          ),
+        ]);
 
         console.log('[Bookings] Supabase query result - Data:', data?.length, 'Error:', fetchError);
 
         if (fetchError) {
           console.error('[Bookings] Supabase error:', fetchError);
-          setError(true);
-          setErrorMessage(`Error loading bookings: ${fetchError.message}`);
-          setBookings([]);
-          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Error: ' + fetchError.message, rawDataCount: 0 }));
+          if (bookings.length === 0) {
+            setError(true);
+            setErrorMessage(`Error loading bookings: ${fetchError.message}`);
+          }
+          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Error: ' + fetchError.message, rawDataCount: bookings.length }));
         } else if (data) {
           console.log('[Bookings] Successfully loaded', data.length, 'bookings for account UUID:', user.id);
           setBookings(data);
@@ -124,13 +128,16 @@ const Bookings = () => {
             setDebugInfo(prev => ({ ...prev, fetchStatus: 'Empty, checking RLS bypass...' }));
 
             try {
-              const { data: rlsBypassData } = await withTimeout(
-                supabase
-                  .from('bookings')
-                  .select('*', { count: 'exact' }),
-                10000,
-                'RLS bypass check timeout'
-              );
+              const rlsQuery = supabase
+                .from('bookings')
+                .select('*', { count: 'exact' });
+
+              const { data: rlsBypassData } = await Promise.race([
+                rlsQuery,
+                new Promise<{ data: null; error: any }>((_, reject) =>
+                  setTimeout(() => reject(new Error('RLS bypass check timeout')), 10000)
+                ),
+              ]);
 
               console.log('[Bookings] RLS Bypass Check - Total rows in table:', rlsBypassData?.length || 0);
               setDebugInfo(prev => ({
@@ -149,9 +156,10 @@ const Bookings = () => {
           }
         } else {
           console.error('[Bookings] Unexpected: No data and no error');
-          setError(true);
-          setErrorMessage('Unexpected response from server');
-          setBookings([]);
+          if (bookings.length === 0) {
+            setError(true);
+            setErrorMessage('Unexpected response from server');
+          }
           setDebugInfo(prev => ({ ...prev, fetchStatus: 'Unexpected response' }));
         }
       } catch (timeoutErr: any) {
@@ -166,9 +174,10 @@ const Bookings = () => {
             setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fallback Success', rawDataCount: fallbackData.length }));
           } catch (fallbackErr: any) {
             console.error('[Bookings] Fallback also failed:', fallbackErr);
-            setError(true);
-            setErrorMessage('Unable to load bookings. Network may be blocked.');
-            setBookings([]);
+            if (bookings.length === 0) {
+              setError(true);
+              setErrorMessage('Unable to load bookings. Network may be blocked.');
+            }
             setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fallback Failed' }));
           }
         } else {
@@ -178,16 +187,15 @@ const Bookings = () => {
     } catch (err) {
       console.error('[Bookings] Fetch error:', err);
 
-      if (isInitial) {
+      if (isInitial && bookings.length === 0) {
         setError(true);
         setErrorMessage('Network error. Please check your connection and try again.');
-        setBookings([]);
       }
 
       setDebugInfo(prev => ({ ...prev, fetchStatus: 'Network Error' }));
     } finally {
-      if (isInitial && isInitialLoadRef.current) {
-        console.log('[Bookings] Initial load complete, locking loading state permanently');
+      if ((isInitial && isInitialLoadRef.current) || bookings.length > 0) {
+        console.log('[Bookings] Load complete, locking loading state permanently (has data:', bookings.length > 0, ')');
         setLoading(false);
         isInitialLoadRef.current = false;
         hasLoadedOnceRef.current = true;
