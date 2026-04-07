@@ -2,27 +2,24 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Calendar, MapPin, Clock, User, CheckCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { supabase, Booking, withTimeout, fetchWithNativeFallback } from '../lib/supabase';
+import { supabase, Booking, getSupabaseUrl, getSupabaseAnonKey } from '../lib/supabase';
 
 const Bookings = () => {
   const { user } = useAuth();
   const location = useLocation();
-  const isInitialLoadRef = useRef(true);
-  const hasLoadedOnceRef = useRef(false);
+  const hasLoadedRef = useRef(false);
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
   const [showSuccessBanner, setShowSuccessBanner] = useState(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [contentLoading, setContentLoading] = useState(false);
   const [error, setError] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [debugInfo, setDebugInfo] = useState({
     currentUserId: '',
     fetchStatus: '',
     rawDataCount: 0,
-    rlsBypassCount: 0,
     timestamp: '',
     loadAttempts: 0,
-    isInitialLoad: true,
   });
 
   useEffect(() => {
@@ -34,172 +31,87 @@ const Bookings = () => {
   }, [location]);
 
   useEffect(() => {
-    console.log('[Bookings] Re-rendering due to:', {
-      userId: user?.id,
-      isInitialLoad: isInitialLoadRef.current,
-      hasLoadedOnce: hasLoadedOnceRef.current
-    });
-
-    if (user) {
-      if (isInitialLoadRef.current) {
-        console.log('[Bookings] First mount - loading bookings');
-        fetchBookings(true);
-      } else if (hasLoadedOnceRef.current) {
-        console.log('[Bookings] Navigation return - silently refreshing in background');
-        fetchBookings(false);
-      }
+    if (user && !hasLoadedRef.current) {
+      hasLoadedRef.current = true;
+      fetchBookings();
     }
   }, [user?.id]);
 
-  const fetchBookings = async (isInitial = false) => {
+  const fetchBookings = async () => {
     if (!user) {
       console.log('[Bookings] No user found');
       return;
     }
 
     const attemptNumber = (debugInfo.loadAttempts || 0) + 1;
-    console.log('[Bookings] Starting fetch #', attemptNumber, 'for user UUID:', user.id, '| isInitial:', isInitial);
+    console.log('[Bookings] Starting fetch #', attemptNumber, 'for user UUID:', user.id);
 
-    if (isInitial && isInitialLoadRef.current && bookings.length === 0) {
-      setLoading(true);
-    }
-
+    setContentLoading(true);
     setError(false);
     setErrorMessage('');
 
     setDebugInfo(prev => ({
       ...prev,
       currentUserId: user.id,
-      fetchStatus: 'Starting...',
+      fetchStatus: 'Fetching...',
       rawDataCount: 0,
-      rlsBypassCount: 0,
       timestamp: new Date().toLocaleTimeString(),
       loadAttempts: attemptNumber,
-      isInitialLoad: isInitial,
     }));
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!session || !session.access_token) {
-        console.error('[Bookings] Auth Token Missing - No session or access_token');
+        console.error('[Bookings] Auth Token Missing');
         setError(true);
         setErrorMessage('Session expired. Please log out and log back in.');
         setDebugInfo(prev => ({ ...prev, fetchStatus: 'Auth Failed' }));
-        setLoading(false);
+        setContentLoading(false);
         return;
       }
 
-      const timeoutDuration = isInitial ? 2000 : 2000;
-      console.log(`[Bookings] Session found, attempting Supabase client with ${timeoutDuration}ms timeout`);
-      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fetching with RLS...' }));
+      const baseUrl = getSupabaseUrl();
+      const anonKey = getSupabaseAnonKey();
+      const url = `${baseUrl}/rest/v1/bookings?user_id=eq.${user.id}&order=created_at.desc`;
 
-      try {
-        const queryPromise = supabase
-          .from('bookings')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
+      console.log('[Bookings] Using native fetch with 2s timeout');
 
-        const { data, error: fetchError } = await Promise.race([
-          queryPromise,
-          new Promise<{ data: null; error: any }>((_, reject) =>
-            setTimeout(() => reject(new Error('Supabase SDK timeout')), timeoutDuration)
-          ),
-        ]);
+      const response = await Promise.race([
+        fetch(url, {
+          method: 'GET',
+          mode: 'cors',
+          credentials: 'omit',
+          headers: {
+            'apikey': anonKey,
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }),
+        new Promise<Response>((_, reject) =>
+          setTimeout(() => reject(new Error('Fetch timeout')), 2000)
+        ),
+      ]) as Response;
 
-        console.log('[Bookings] Supabase query result - Data:', data?.length, 'Error:', fetchError);
-
-        if (fetchError) {
-          console.error('[Bookings] Supabase error:', fetchError);
-          if (bookings.length === 0) {
-            setError(true);
-            setErrorMessage(`Error loading bookings: ${fetchError.message}`);
-          }
-          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Error: ' + fetchError.message, rawDataCount: bookings.length }));
-        } else if (data) {
-          console.log('[Bookings] Successfully loaded', data.length, 'bookings for account UUID:', user.id);
-          setBookings(data);
-          setError(false);
-          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Success', rawDataCount: data.length }));
-
-          if (data.length === 0) {
-            console.log('[Bookings] Empty result - No bookings found, triggering RLS bypass diagnostic');
-            setDebugInfo(prev => ({ ...prev, fetchStatus: 'Empty, checking RLS bypass...' }));
-
-            try {
-              const rlsQuery = supabase
-                .from('bookings')
-                .select('*', { count: 'exact' });
-
-              const { data: rlsBypassData } = await Promise.race([
-                rlsQuery,
-                new Promise<{ data: null; error: any }>((_, reject) =>
-                  setTimeout(() => reject(new Error('RLS bypass check timeout')), 10000)
-                ),
-              ]);
-
-              console.log('[Bookings] RLS Bypass Check - Total rows in table:', rlsBypassData?.length || 0);
-              setDebugInfo(prev => ({
-                ...prev,
-                fetchStatus: 'Empty (RLS OK)',
-                rlsBypassCount: rlsBypassData?.length || 0
-              }));
-            } catch (rlsErr) {
-              console.error('[Bookings] RLS bypass check failed:', rlsErr);
-              setDebugInfo(prev => ({
-                ...prev,
-                fetchStatus: 'Empty (RLS check failed)',
-                rlsBypassCount: 0
-              }));
-            }
-          }
-        } else {
-          console.error('[Bookings] Unexpected: No data and no error');
-          if (bookings.length === 0) {
-            setError(true);
-            setErrorMessage('Unexpected response from server');
-          }
-          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Unexpected response' }));
-        }
-      } catch (timeoutErr: any) {
-        if (timeoutErr.message === 'Supabase SDK timeout') {
-          console.warn('[Bookings] SDK timed out, switching to native fetch fallback');
-          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Timeout, trying fallback...' }));
-          try {
-            const fallbackData = await fetchWithNativeFallback('bookings', user.id, session.access_token);
-            console.log('[Bookings] Fallback successful - loaded', fallbackData.length, 'bookings');
-            setBookings(fallbackData);
-            setError(false);
-            setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fallback Success', rawDataCount: fallbackData.length }));
-          } catch (fallbackErr: any) {
-            console.error('[Bookings] Fallback also failed:', fallbackErr);
-            if (bookings.length === 0) {
-              setError(true);
-              setErrorMessage('Unable to load bookings. Network may be blocked.');
-            }
-            setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fallback Failed' }));
-          }
-        } else {
-          throw timeoutErr;
-        }
+      if (!response.ok) {
+        console.error('[Bookings] Fetch error:', response.status);
+        throw new Error(`HTTP ${response.status}`);
       }
-    } catch (err) {
+
+      const data = await response.json();
+      console.log('[Bookings] Successfully loaded', data.length, 'bookings');
+      setBookings(data);
+      setError(false);
+      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Success', rawDataCount: data.length }));
+    } catch (err: any) {
       console.error('[Bookings] Fetch error:', err);
-
-      if (isInitial && bookings.length === 0) {
+      if (bookings.length === 0) {
         setError(true);
-        setErrorMessage('Network error. Please check your connection and try again.');
+        setErrorMessage('Unable to load bookings. Please try again.');
       }
-
-      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Network Error' }));
+      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Error: ' + err.message }));
     } finally {
-      if ((isInitial && isInitialLoadRef.current) || bookings.length > 0) {
-        console.log('[Bookings] Load complete, locking loading state permanently (has data:', bookings.length > 0, ')');
-        setLoading(false);
-        isInitialLoadRef.current = false;
-        hasLoadedOnceRef.current = true;
-      }
+      setContentLoading(false);
     }
   };
 
@@ -249,25 +161,62 @@ const Bookings = () => {
           <div><span className="text-gray-400">Current User UUID:</span> {debugInfo.currentUserId.slice(0, 20) || 'N/A'}...</div>
           <div><span className="text-gray-400">Fetch Status:</span> {debugInfo.fetchStatus || 'Not started'}</div>
           <div><span className="text-gray-400">Raw Data Count:</span> {debugInfo.rawDataCount}</div>
-          <div><span className="text-gray-400">RLS Bypass Count:</span> {debugInfo.rlsBypassCount}</div>
           <div><span className="text-gray-400">Timestamp:</span> {debugInfo.timestamp || 'N/A'}</div>
           <div><span className="text-gray-400">Load Attempts:</span> {debugInfo.loadAttempts}</div>
-          <div><span className="text-gray-400">Is Initial Load:</span> {debugInfo.isInitialLoad ? 'YES' : 'NO'}</div>
-          <div><span className="text-gray-400">Loading State:</span> {loading ? 'TRUE' : 'FALSE'}</div>
-          <div><span className="text-gray-400">Has Loaded Once:</span> {hasLoadedOnceRef.current ? 'YES' : 'NO'}</div>
+          <div><span className="text-gray-400">Content Loading:</span> {contentLoading ? 'TRUE' : 'FALSE'}</div>
         </div>
       </div>
 
-      {loading ? (
-        <div className="min-h-screen flex items-center justify-center pb-32">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading bookings...</p>
+      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 pb-24">
+        {showSuccessBanner && (
+          <div className="mb-6 bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center space-x-3 animate-in fade-in slide-in-from-top-4 duration-500">
+            <CheckCircle size={24} className="text-green-600 flex-shrink-0" />
+            <div>
+              <p className="font-semibold text-green-900">Booking Confirmed!</p>
+              <p className="text-sm text-green-700">Your service has been successfully booked.</p>
+            </div>
+          </div>
+        )}
+
+        <div className="mb-8">
+          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">My Bookings</h1>
+          <p className="text-gray-600 text-lg">Track and manage your service bookings</p>
+        </div>
+
+        <div className="mb-6">
+          <div className="flex space-x-2 bg-white rounded-xl p-1 border border-gray-200 inline-flex">
+            <button
+              onClick={() => setActiveTab('active')}
+              className={`px-6 py-2 rounded-lg font-medium transition-all ${
+                activeTab === 'active'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Active ({activeBookings.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('completed')}
+              className={`px-6 py-2 rounded-lg font-medium transition-all ${
+                activeTab === 'completed'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Completed ({completedBookings.length})
+            </button>
           </div>
         </div>
-      ) : error ? (
-        <div className="min-h-screen flex items-center justify-center px-4 pb-32">
-          <div className="text-center max-w-md">
+
+        {contentLoading ? (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
+            <div className="flex items-center justify-center space-x-3">
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+              <p className="text-gray-600 text-sm">Checking for bookings...</p>
+            </div>
+          </div>
+        ) : error && bookings.length === 0 ? (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center">
             <div className="bg-red-50 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
               <Calendar size={32} className="text-red-600" />
             </div>
@@ -276,148 +225,104 @@ const Bookings = () => {
               {errorMessage || 'We couldn\'t fetch your bookings. Please try again.'}
             </p>
             <button
-              onClick={() => fetchBookings(true)}
+              onClick={() => fetchBookings()}
               className="bg-blue-600 text-white py-3 px-8 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
             >
               Refresh
             </button>
           </div>
-        </div>
-      ) : (
-    <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 pb-24">
-      {showSuccessBanner && (
-        <div className="mb-6 bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center space-x-3 animate-in fade-in slide-in-from-top-4 duration-500">
-          <CheckCircle size={24} className="text-green-600 flex-shrink-0" />
-          <div>
-            <p className="font-semibold text-green-900">Booking Confirmed!</p>
-            <p className="text-sm text-green-700">Your service has been successfully booked.</p>
+        ) : displayedBookings.length === 0 ? (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center">
+            <Calendar size={48} className="text-gray-300 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              {bookings.length === 0 ? 'No bookings found yet' : `No ${activeTab} bookings`}
+            </h3>
+            <p className="text-gray-600 mb-2">
+              {bookings.length === 0
+                ? "Your first booking will appear here after payment."
+                : activeTab === 'active'
+                ? "You don't have any active bookings at the moment."
+                : "You haven't completed any bookings yet."}
+            </p>
           </div>
-        </div>
-      )}
-
-      <div className="mb-8">
-        <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">My Bookings</h1>
-        <p className="text-gray-600 text-lg">Track and manage your service bookings</p>
-      </div>
-
-      <div className="mb-6">
-        <div className="flex space-x-2 bg-white rounded-xl p-1 border border-gray-200 inline-flex">
-          <button
-            onClick={() => setActiveTab('active')}
-            className={`px-6 py-2 rounded-lg font-medium transition-all ${
-              activeTab === 'active'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Active ({activeBookings.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('completed')}
-            className={`px-6 py-2 rounded-lg font-medium transition-all ${
-              activeTab === 'completed'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Completed ({completedBookings.length})
-          </button>
-        </div>
-      </div>
-
-      {displayedBookings.length === 0 ? (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center">
-          <Calendar size={48} className="text-gray-300 mx-auto mb-4" />
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-            {bookings.length === 0 ? 'No bookings found yet' : `No ${activeTab} bookings`}
-          </h3>
-          <p className="text-gray-600 mb-2">
-            {bookings.length === 0
-              ? "Your first booking will appear here after payment."
-              : activeTab === 'active'
-              ? "You don't have any active bookings at the moment."
-              : "You haven't completed any bookings yet."}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {displayedBookings.map((booking) => (
-            <div
-              key={booking.id}
-              className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 hover:shadow-md transition-shadow"
-            >
-              <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-4">
-                <div className="mb-4 md:mb-0">
-                  <div className="flex items-center space-x-3 mb-2">
-                    <h3 className="text-xl font-bold text-gray-900">{booking.service_name}</h3>
-                    {getStatusBadge(booking.status)}
-                  </div>
-                  <p className="text-gray-600">Booking ID: {booking.id.slice(0, 8)}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-2xl font-bold text-blue-600">₹{booking.price}</p>
-                  <p className="text-sm text-gray-500">{booking.tier}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div className="flex items-start space-x-3">
-                  <Calendar size={20} className="text-gray-400 mt-1 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm text-gray-500">Date</p>
-                    <p className="text-gray-900 font-medium">{formatDate(booking.date)}</p>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <Clock size={20} className="text-gray-400 mt-1 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm text-gray-500">Time Slot</p>
-                    <p className="text-gray-900 font-medium">{booking.time_slot}</p>
-                  </div>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <MapPin size={20} className="text-gray-400 mt-1 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm text-gray-500">Location</p>
-                    <p className="text-gray-900 font-medium">{booking.location}</p>
-                    <p className="text-gray-600 text-sm">{booking.address}</p>
-                  </div>
-                </div>
-                {booking.partner_name && (
-                  <div className="flex items-start space-x-3">
-                    <User size={20} className="text-gray-400 mt-1 flex-shrink-0" />
-                    <div>
-                      <p className="text-sm text-gray-500">Service Partner</p>
-                      <p className="text-gray-900 font-medium">{booking.partner_name}</p>
+        ) : (
+          <div className="space-y-4">
+            {displayedBookings.map((booking) => (
+              <div
+                key={booking.id}
+                className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 hover:shadow-md transition-shadow"
+              >
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between mb-4">
+                  <div className="mb-4 md:mb-0">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <h3 className="text-xl font-bold text-gray-900">{booking.service_name}</h3>
+                      {getStatusBadge(booking.status)}
                     </div>
+                    <p className="text-gray-600">Booking ID: {booking.id.slice(0, 8)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-bold text-blue-600">₹{booking.price}</p>
+                    <p className="text-sm text-gray-500">{booking.tier}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div className="flex items-start space-x-3">
+                    <Calendar size={20} className="text-gray-400 mt-1 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm text-gray-500">Date</p>
+                      <p className="text-gray-900 font-medium">{formatDate(booking.date)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start space-x-3">
+                    <Clock size={20} className="text-gray-400 mt-1 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm text-gray-500">Time Slot</p>
+                      <p className="text-gray-900 font-medium">{booking.time_slot}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start space-x-3">
+                    <MapPin size={20} className="text-gray-400 mt-1 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm text-gray-500">Location</p>
+                      <p className="text-gray-900 font-medium">{booking.location}</p>
+                      <p className="text-gray-600 text-sm">{booking.address}</p>
+                    </div>
+                  </div>
+                  {booking.partner_name && (
+                    <div className="flex items-start space-x-3">
+                      <User size={20} className="text-gray-400 mt-1 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm text-gray-500">Service Partner</p>
+                        <p className="text-gray-900 font-medium">{booking.partner_name}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {booking.status === 'in_progress' && (
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mt-4">
+                    <p className="text-purple-900 font-medium">
+                      Your service is currently in progress
+                    </p>
+                    <p className="text-sm text-purple-700 mt-1">
+                      The partner will notify you once completed
+                    </p>
+                  </div>
+                )}
+
+                {booking.status === 'partner_assigned' && (
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-4 mt-4">
+                    <p className="text-green-900 font-medium">
+                      Partner assigned and will arrive at scheduled time
+                    </p>
                   </div>
                 )}
               </div>
-
-              {booking.status === 'in_progress' && (
-                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mt-4">
-                  <p className="text-purple-900 font-medium">
-                    Your service is currently in progress
-                  </p>
-                  <p className="text-sm text-purple-700 mt-1">
-                    The partner will notify you once completed
-                  </p>
-                </div>
-              )}
-
-              {booking.status === 'partner_assigned' && (
-                <div className="bg-green-50 border border-green-200 rounded-xl p-4 mt-4">
-                  <p className="text-green-900 font-medium">
-                    Partner assigned and will arrive at scheduled time
-                  </p>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </>
   );
 };

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, Mail, Phone, ChevronRight, LogOut, Bell, Shield, HelpCircle, CreditCard as Edit2, X, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { supabase, withTimeout, fetchWithNativeFallback } from '../lib/supabase';
+import { supabase, getSupabaseUrl, getSupabaseAnonKey } from '../lib/supabase';
 
 const Profile = () => {
   const { user, profile, signOut, updateProfile } = useAuth();
@@ -62,7 +62,7 @@ const Profile = () => {
     }
 
     const attemptNumber = (debugInfo.loadAttempts || 0) + 1;
-    console.log('[Profile] Starting stats fetch #', attemptNumber, 'for user UUID:', user.id, '| isInitial:', isInitial);
+    console.log('[Profile] Starting stats fetch #', attemptNumber, 'for user UUID:', user.id);
 
     if (isInitial && isInitialLoadRef.current) {
       setLoadingStats(true);
@@ -73,7 +73,7 @@ const Profile = () => {
     setDebugInfo(prev => ({
       ...prev,
       currentUserId: user.id,
-      fetchStatus: 'Starting...',
+      fetchStatus: 'Fetching...',
       rawDataCount: 0,
       rlsBypassCount: 0,
       timestamp: new Date().toLocaleTimeString(),
@@ -85,117 +85,57 @@ const Profile = () => {
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!session || !session.access_token) {
-        console.error('[Profile] Auth Token Missing - No session or access_token');
+        console.error('[Profile] Auth Token Missing');
         setStatsError(true);
         setDebugInfo(prev => ({ ...prev, fetchStatus: 'Auth Failed' }));
+        setLoadingStats(false);
         return;
       }
 
-      const timeoutDuration = isInitial ? 2000 : 2000;
-      console.log(`[Profile] Session found, attempting Supabase client with ${timeoutDuration}ms timeout`);
-      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fetching with RLS...' }));
+      const baseUrl = getSupabaseUrl();
+      const anonKey = getSupabaseAnonKey();
+      const url = `${baseUrl}/rest/v1/bookings?user_id=eq.${user.id}&select=status`;
 
-      try {
-        const { data: bookings, error: fetchError } = await withTimeout(
-          supabase
-            .from('bookings')
-            .select('status')
-            .eq('user_id', user.id),
-          timeoutDuration,
-          'Supabase SDK timeout'
-        );
+      console.log('[Profile] Using native fetch with 2s timeout');
 
-        console.log('[Profile] Supabase query result - Data:', bookings?.length, 'Error:', fetchError);
+      const response = await Promise.race([
+        fetch(url, {
+          method: 'GET',
+          mode: 'cors',
+          credentials: 'omit',
+          headers: {
+            'apikey': anonKey,
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }),
+        new Promise<Response>((_, reject) =>
+          setTimeout(() => reject(new Error('Fetch timeout')), 2000)
+        ),
+      ]) as Response;
 
-        if (fetchError) {
-          console.error('[Profile] Supabase error:', fetchError);
-          setStatsError(true);
-          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Error: ' + fetchError.message, rawDataCount: 0 }));
-        } else if (bookings) {
-          const total = bookings.length;
-          const completed = bookings.filter((b: any) => b.status === 'completed').length;
-          const active = bookings.filter((b: any) => b.status !== 'completed' && b.status !== 'cancelled').length;
-
-          console.log('[Profile] Calculated stats - Total:', total, 'Completed:', completed, 'Active:', active);
-
-          setBookingStats({
-            total,
-            completed,
-            active,
-          });
-          setStatsError(false);
-          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Success', rawDataCount: total }));
-
-          if (bookings.length === 0) {
-            console.log('[Profile] Empty result - No bookings found, triggering RLS bypass diagnostic');
-            setDebugInfo(prev => ({ ...prev, fetchStatus: 'Empty, checking RLS bypass...' }));
-
-            try {
-              const { data: rlsBypassData } = await withTimeout(
-                supabase
-                  .from('bookings')
-                  .select('*', { count: 'exact' }),
-                10000,
-                'RLS bypass check timeout'
-              );
-
-              console.log('[Profile] RLS Bypass Check - Total rows in table:', rlsBypassData?.length || 0);
-              setDebugInfo(prev => ({
-                ...prev,
-                fetchStatus: 'Empty (RLS OK)',
-                rlsBypassCount: rlsBypassData?.length || 0
-              }));
-            } catch (rlsErr) {
-              console.error('[Profile] RLS bypass check failed:', rlsErr);
-              setDebugInfo(prev => ({
-                ...prev,
-                fetchStatus: 'Empty (RLS check failed)',
-                rlsBypassCount: 0
-              }));
-            }
-          } else {
-            console.log('[Profile] Successfully calculated stats for', bookings.length, 'bookings');
-          }
-        } else {
-          console.error('[Profile] Unexpected: No data and no error');
-          setStatsError(true);
-          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Unexpected response' }));
-        }
-      } catch (timeoutErr: any) {
-        if (timeoutErr.message === 'Supabase SDK timeout') {
-          console.warn('[Profile] SDK timed out, switching to native fetch fallback');
-          setDebugInfo(prev => ({ ...prev, fetchStatus: 'Timeout, trying fallback...' }));
-          try {
-            const fallbackData = await fetchWithNativeFallback('bookings', user.id, session.access_token);
-            const total = fallbackData.length;
-            const completed = fallbackData.filter((b: any) => b.status === 'completed').length;
-            const active = fallbackData.filter((b: any) => b.status !== 'completed' && b.status !== 'cancelled').length;
-
-            console.log('[Profile] Fallback successful - Stats:', total, completed, active);
-
-            setBookingStats({ total, completed, active });
-            setStatsError(false);
-            setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fallback Success', rawDataCount: total }));
-          } catch (fallbackErr: any) {
-            console.error('[Profile] Fallback also failed:', fallbackErr);
-            setStatsError(true);
-            setDebugInfo(prev => ({ ...prev, fetchStatus: 'Fallback Failed' }));
-          }
-        } else {
-          throw timeoutErr;
-        }
+      if (!response.ok) {
+        console.error('[Profile] Fetch error:', response.status);
+        throw new Error(`HTTP ${response.status}`);
       }
-    } catch (err) {
+
+      const bookings = await response.json();
+      console.log('[Profile] Successfully loaded', bookings.length, 'booking records');
+
+      const total = bookings.length;
+      const completed = bookings.filter((b: any) => b.status === 'completed').length;
+      const active = bookings.filter((b: any) => b.status !== 'completed' && b.status !== 'cancelled').length;
+
+      setBookingStats({ total, completed, active });
+      setStatsError(false);
+      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Success', rawDataCount: total }));
+    } catch (err: any) {
       console.error('[Profile] Fetch error:', err);
-
-      if (isInitial) {
-        setStatsError(true);
-      }
-
-      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Network Error' }));
+      setStatsError(true);
+      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Error: ' + err.message }));
     } finally {
       if (isInitial && isInitialLoadRef.current) {
-        console.log('[Profile] Initial stats load complete, locking loading state permanently');
+        console.log('[Profile] Initial stats load complete');
         setLoadingStats(false);
         isInitialLoadRef.current = false;
         hasLoadedStatsRef.current = true;
@@ -219,82 +159,15 @@ const Profile = () => {
     setSuccessMessage('');
 
     try {
-      console.log('[Profile] Attempting SDK update with 2s timeout for phone:', phoneNumber);
+      const { error: updateError } = await updateProfile({ phone: phoneNumber });
 
-      try {
-        const { error: updateError } = await withTimeout(
-          updateProfile({ phone: phoneNumber }),
-          2000,
-          'Profile update SDK timeout'
-        );
-
-        if (updateError) {
-          console.error('[Profile] SDK update error:', updateError);
-          throw new Error(updateError.message);
-        }
-
-        console.log('[Profile] SDK update successful');
-        setIsEditingPhone(false);
-        setSuccessMessage('Phone number updated successfully');
-        setTimeout(() => setSuccessMessage(''), 3000);
-        setSaving(false);
-        return;
-
-      } catch (timeoutErr: any) {
-        if (timeoutErr.message === 'Profile update SDK timeout') {
-          console.warn('[Profile] SDK timeout, falling back to Native Fetch for update');
-
-          const { data: { session } } = await supabase.auth.getSession();
-
-          console.log('[Profile] Auth check - Session exists:', !!session);
-          console.log('[Profile] Auth check - Access token exists:', !!session?.access_token);
-          console.log('[Profile] Auth check - Token preview:', session?.access_token?.substring(0, 20));
-
-          if (!session?.access_token) {
-            throw new Error('No auth session available - please log in again');
-          }
-
-          const cacheBuster = `_cb=${Date.now()}`;
-          const updateUrl = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/profiles?id=eq.${user?.id}&${cacheBuster}`;
-
-          console.log('[Profile] Native PATCH to:', updateUrl);
-          console.log('[Profile] Authorization header:', `Bearer ${session.access_token.substring(0, 30)}...`);
-
-          const nativeUpdate = await fetchWithNativeFallback(
-            updateUrl,
-            {
-              method: 'PATCH',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`,
-                'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-                'Prefer': 'return=minimal',
-                'Cache-Control': 'no-cache, no-store, must-revalidate'
-              },
-              body: JSON.stringify({ phone: phoneNumber })
-            }
-          );
-
-          console.log('[Profile] Native update response status:', nativeUpdate.status);
-
-          if (!nativeUpdate.ok) {
-            const errorText = await nativeUpdate.text();
-            console.error('[Profile] Native update failed:', nativeUpdate.status, errorText);
-            throw new Error(`Update failed with status ${nativeUpdate.status}`);
-          }
-
-          console.log('[Profile] Native Fetch update successful - Status:', nativeUpdate.status);
-
-          await updateProfile({ phone: phoneNumber });
-
-          setIsEditingPhone(false);
-          setSuccessMessage('Phone number updated successfully');
-          setTimeout(() => setSuccessMessage(''), 3000);
-        } else {
-          throw timeoutErr;
-        }
+      if (updateError) {
+        throw new Error(updateError.message);
       }
 
+      setIsEditingPhone(false);
+      setSuccessMessage('Phone number updated successfully');
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err: any) {
       console.error('[Profile] Update error:', err);
       setError(`Failed to update phone number: ${err.message}`);
@@ -314,82 +187,15 @@ const Profile = () => {
     setSuccessMessage('');
 
     try {
-      console.log('[Profile] Attempting SDK update with 2s timeout for name:', fullName);
+      const { error: updateError } = await updateProfile({ full_name: fullName });
 
-      try {
-        const { error: updateError } = await withTimeout(
-          updateProfile({ full_name: fullName }),
-          2000,
-          'Profile update SDK timeout'
-        );
-
-        if (updateError) {
-          console.error('[Profile] SDK update error:', updateError);
-          throw new Error(updateError.message);
-        }
-
-        console.log('[Profile] SDK update successful');
-        setIsEditingName(false);
-        setSuccessMessage('Name updated successfully');
-        setTimeout(() => setSuccessMessage(''), 3000);
-        setSaving(false);
-        return;
-
-      } catch (timeoutErr: any) {
-        if (timeoutErr.message === 'Profile update SDK timeout') {
-          console.warn('[Profile] SDK timeout, falling back to Native Fetch for update');
-
-          const { data: { session } } = await supabase.auth.getSession();
-
-          console.log('[Profile] Auth check - Session exists:', !!session);
-          console.log('[Profile] Auth check - Access token exists:', !!session?.access_token);
-          console.log('[Profile] Auth check - Token preview:', session?.access_token?.substring(0, 20));
-
-          if (!session?.access_token) {
-            throw new Error('No auth session available - please log in again');
-          }
-
-          const cacheBuster = `_cb=${Date.now()}`;
-          const updateUrl = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/profiles?id=eq.${user?.id}&${cacheBuster}`;
-
-          console.log('[Profile] Native PATCH to:', updateUrl);
-          console.log('[Profile] Authorization header:', `Bearer ${session.access_token.substring(0, 30)}...`);
-
-          const nativeUpdate = await fetchWithNativeFallback(
-            updateUrl,
-            {
-              method: 'PATCH',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`,
-                'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-                'Prefer': 'return=minimal',
-                'Cache-Control': 'no-cache, no-store, must-revalidate'
-              },
-              body: JSON.stringify({ full_name: fullName })
-            }
-          );
-
-          console.log('[Profile] Native update response status:', nativeUpdate.status);
-
-          if (!nativeUpdate.ok) {
-            const errorText = await nativeUpdate.text();
-            console.error('[Profile] Native update failed:', nativeUpdate.status, errorText);
-            throw new Error(`Update failed with status ${nativeUpdate.status}`);
-          }
-
-          console.log('[Profile] Native Fetch update successful - Status:', nativeUpdate.status);
-
-          await updateProfile({ full_name: fullName });
-
-          setIsEditingName(false);
-          setSuccessMessage('Name updated successfully');
-          setTimeout(() => setSuccessMessage(''), 3000);
-        } else {
-          throw timeoutErr;
-        }
+      if (updateError) {
+        throw new Error(updateError.message);
       }
 
+      setIsEditingName(false);
+      setSuccessMessage('Name updated successfully');
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err: any) {
       console.error('[Profile] Update error:', err);
       setError(`Failed to update name: ${err.message}`);
@@ -410,14 +216,7 @@ const Profile = () => {
   ];
 
   if (!profile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading profile...</p>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   const getInitials = () => {
@@ -566,40 +365,36 @@ const Profile = () => {
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 mb-6 relative">
         <h3 className="text-xl font-bold text-gray-900 mb-4">Booking Statistics</h3>
         {loadingStats ? (
+          <div className="flex items-center justify-center space-x-3 py-6">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+            <p className="text-sm text-gray-600">Checking for bookings...</p>
+          </div>
+        ) : statsError ? (
           <div className="text-center py-6">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-            <p className="text-sm text-gray-500">Loading stats...</p>
+            <p className="text-gray-600 mb-1">Unable to load booking statistics</p>
+            <p className="text-sm text-gray-500 mb-4">Check console for details</p>
+            <button
+              onClick={() => fetchBookingStats(true)}
+              className="bg-blue-600 text-white py-2 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors text-sm"
+            >
+              Retry
+            </button>
           </div>
         ) : (
-          <>
-            {statsError ? (
-              <div className="text-center py-6">
-                <p className="text-gray-600 mb-1">Unable to load booking statistics</p>
-                <p className="text-sm text-gray-500 mb-4">Check console for details</p>
-                <button
-                  onClick={() => fetchBookingStats(true)}
-                  className="bg-blue-600 text-white py-2 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors text-sm"
-                >
-                  Retry
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-3 gap-4">
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-blue-600 mb-1">{bookingStats.total}</div>
-                  <div className="text-sm text-gray-600">Total</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-green-600 mb-1">{bookingStats.completed}</div>
-                  <div className="text-sm text-gray-600">Completed</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-orange-600 mb-1">{bookingStats.active}</div>
-                  <div className="text-sm text-gray-600">Active</div>
-                </div>
-              </div>
-            )}
-          </>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-blue-600 mb-1">{bookingStats.total}</div>
+              <div className="text-sm text-gray-600">Total</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-green-600 mb-1">{bookingStats.completed}</div>
+              <div className="text-sm text-gray-600">Completed</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-orange-600 mb-1">{bookingStats.active}</div>
+              <div className="text-sm text-gray-600">Active</div>
+            </div>
+          </div>
         )}
       </div>
 

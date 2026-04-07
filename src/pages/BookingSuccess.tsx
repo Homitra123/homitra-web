@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { CheckCircle, Calendar, Clock, MapPin, IndianRupee, ArrowRight } from 'lucide-react';
-import { supabase, getSupabaseUrl, getSupabaseAnonKey, withTimeout, fetchWithNativeFallback } from '../lib/supabase';
+import { supabase, getSupabaseUrl, getSupabaseAnonKey } from '../lib/supabase';
 
 interface BookingDetails {
   id: string;
@@ -18,10 +18,11 @@ const BookingSuccess = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [booking, setBooking] = useState<BookingDetails | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [retryCount, setRetryCount] = useState(0);
-  const [showEmergencyButton, setShowEmergencyButton] = useState(false);
-  const [error, setError] = useState(false);
+  const [contentLoading, setContentLoading] = useState(true);
+
+  useEffect(() => {
+    fetchBooking();
+  }, [searchParams]);
 
   const fetchBooking = async () => {
     const bookingId = searchParams.get('booking_id');
@@ -39,121 +40,49 @@ const BookingSuccess = () => {
         return;
       }
 
-      console.log('[BookingSuccess] Fetching with 2s timeout, bookingId:', bookingId);
+      console.log('[BookingSuccess] Fetching with native fetch, bookingId:', bookingId);
 
-      try {
-        const query = bookingId
-          ? supabase.from('bookings').select('*').eq('id', bookingId).limit(1)
-          : supabase.from('bookings').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(1);
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
-        const { data, error } = await withTimeout(query, 2000, 'BookingSuccess SDK timeout');
+      const baseUrl = getSupabaseUrl();
+      const anonKey = getSupabaseAnonKey();
 
-        if (error) {
-          console.error('[BookingSuccess] SDK error:', error);
-          throw new Error('SDK failed');
-        }
+      let url: string;
+      if (bookingId) {
+        url = `${baseUrl}/rest/v1/bookings?id=eq.${bookingId}&limit=1`;
+      } else {
+        url = `${baseUrl}/rest/v1/bookings?user_id=eq.${user.id}&order=created_at.desc&limit=1`;
+      }
 
-        if (data && data.length > 0) {
-          console.log('[BookingSuccess] SDK success:', data[0]);
-          return data[0];
-        } else {
-          console.log('[BookingSuccess] No booking found yet, attempt:', retryCount + 1);
-          return null;
-        }
-      } catch (timeoutErr: any) {
-        console.warn('[BookingSuccess] SDK timed out or failed, using native fetch fallback');
+      const response = await Promise.race([
+        fetch(url, {
+          method: 'GET',
+          mode: 'cors',
+          credentials: 'omit',
+          headers: {
+            'apikey': anonKey,
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }),
+        new Promise<Response>((_, reject) =>
+          setTimeout(() => reject(new Error('Fetch timeout')), 2000)
+        ),
+      ]) as Response;
 
-        const baseUrl = getSupabaseUrl();
-        const anonKey = getSupabaseAnonKey();
-
-        let url: string;
-        if (bookingId) {
-          url = `${baseUrl}/rest/v1/bookings?id=eq.${bookingId}&limit=1`;
-        } else {
-          url = `${baseUrl}/rest/v1/bookings?user_id=eq.${user.id}&order=created_at.desc&limit=1`;
-        }
-
-        const response = await Promise.race([
-          fetch(url, {
-            method: 'GET',
-            mode: 'cors',
-            credentials: 'omit',
-            headers: {
-              'apikey': anonKey,
-              'Authorization': `Bearer ${session.access_token}`,
-              'Content-Type': 'application/json',
-            },
-          }),
-          new Promise<Response>((_, reject) =>
-            setTimeout(() => reject(new Error('Fallback timeout')), 2000)
-          ),
-        ]) as Response;
-
-        if (!response.ok) {
-          console.error('[BookingSuccess] Fallback error:', response.status);
-          return null;
-        }
-
+      if (response.ok) {
         const data = await response.json();
         if (data && data.length > 0) {
-          console.log('[BookingSuccess] Fallback success:', data[0]);
-          return data[0];
-        } else {
-          console.log('[BookingSuccess] No booking found via fallback');
-          return null;
+          console.log('[BookingSuccess] Loaded booking:', data[0]);
+          setBooking(data[0]);
         }
       }
     } catch (err) {
       console.error('[BookingSuccess] Error:', err);
-      return null;
+    } finally {
+      setContentLoading(false);
     }
   };
-
-  useEffect(() => {
-    const emergencyTimer = setTimeout(() => {
-      setShowEmergencyButton(true);
-    }, 3000);
-
-    const maxTimeoutTimer = setTimeout(() => {
-      setLoading(false);
-    }, 15000);
-
-    const attemptFetch = async () => {
-      setLoading(true);
-      setError(false);
-
-      if (retryCount === 0) {
-        console.log('[BookingSuccess] Waiting 5 seconds for Supabase to index new booking...');
-        await new Promise(resolve => setTimeout(resolve, 5000));
-      }
-
-      const result = await fetchBooking();
-
-      if (result) {
-        clearTimeout(emergencyTimer);
-        clearTimeout(maxTimeoutTimer);
-        setBooking(result);
-        setLoading(false);
-        setError(false);
-      } else if (retryCount < 2) {
-        setTimeout(() => {
-          setRetryCount(prev => prev + 1);
-        }, 2000);
-      } else {
-        clearTimeout(emergencyTimer);
-        clearTimeout(maxTimeoutTimer);
-        setLoading(false);
-        setError(false);
-      }
-    };
-
-    attemptFetch();
-
-    return () => {
-      clearTimeout(emergencyTimer);
-      clearTimeout(maxTimeoutTimer);
-    };
-  }, [retryCount, searchParams, navigate]);
 
   const formattedDate = booking ? new Date(booking.date).toLocaleDateString('en-IN', {
     weekday: 'short',
@@ -181,7 +110,7 @@ const BookingSuccess = () => {
           </div>
 
           <div className="p-8">
-            {loading ? (
+            {contentLoading ? (
               <div className="mb-8 text-center py-12">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
                 <p className="text-gray-600 text-lg">Loading your booking details...</p>
