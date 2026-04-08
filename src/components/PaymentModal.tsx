@@ -77,13 +77,17 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
       service_id: bookingData.serviceId || 'unknown',
       service_name: bookingData.serviceName,
       tier: bookingData.tier || 'Standard',
-      booking_mode: bookingData.bookingMode || 'single',
+      booking_mode: bookingData.isMultipleBooking ? 'multiple' : 'single',
       duration: bookingData.duration || '1 hour',
       date: bookingData.date,
+      dates: bookingData.dates || [bookingData.date],
+      weekdays: [],
       time_slot: bookingData.timeSlot,
+      flexible_bookings: bookingData.scheduledBookings || null,
       location: bookingData.location,
       address: bookingData.address || bookingData.location,
       price: amount,
+      visits: bookingData.visits || 1,
       status: 'confirmed',
       payment_id: razorpayPaymentId,
     };
@@ -144,34 +148,36 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
         name: 'Homitra',
         description: bookingData.serviceName,
         image: '/Home_Assiatnt_Pic.png',
-        handler: async function (response: any) {
+        handler: function (response: any) {
           console.log('=== PAYMENT SUCCESSFUL ===');
           console.log('Payment response:', response);
           console.log('Razorpay Payment ID:', response.razorpay_payment_id);
 
-          try {
-            const result = await completeBooking(response.razorpay_payment_id);
-            console.log('✓ Booking completed successfully, result:', result);
-            console.log('Booking ID:', result.bookingId);
+          completeBooking(response.razorpay_payment_id)
+            .then((result) => {
+              console.log('✓ Booking completed successfully, result:', result);
+              console.log('✓ Booking ID:', result.bookingId);
+              console.log('✓ Starting navigation sequence...');
 
-            console.log('Waiting 500ms to ensure database commit...');
-            await new Promise(resolve => setTimeout(resolve, 500));
+              setIsProcessing(false);
 
-            console.log('Closing modal and navigating to success page...');
-            onClose();
-
-            setTimeout(() => {
+              console.log('✓ NAVIGATING NOW to /booking-success with ID:', result.bookingId);
               navigate('/booking-success', {
                 replace: true,
                 state: { bookingId: result.bookingId }
               });
-            }, 100);
-          } catch (error: any) {
-            console.error('✗ Failed to complete booking:', error);
-            console.error('Error details:', error.message, error.code, error.details);
-            setError('Payment successful but booking failed to save. Please contact support with payment ID: ' + response.razorpay_payment_id);
-            setIsProcessing(false);
-          }
+
+              setTimeout(() => {
+                console.log('✓ Closing modal after navigation...');
+                onClose();
+              }, 100);
+            })
+            .catch((error: any) => {
+              console.error('✗ Failed to complete booking:', error);
+              console.error('✗ Error details:', error.message);
+              setError('Payment successful but booking failed to save. Please contact support with payment ID: ' + response.razorpay_payment_id);
+              setIsProcessing(false);
+            });
         },
         prefill: {
           name: profile.full_name || '',
