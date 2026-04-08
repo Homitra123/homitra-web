@@ -95,92 +95,86 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
     console.log('Step 5: Inserting booking into database');
     console.log('Booking record:', JSON.stringify(bookingRecord, null, 2));
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    console.log('Session check:', {
-      hasSession: !!sessionData.session,
-      userId: sessionData.session?.user?.id,
-      hasAccessToken: !!sessionData.session?.access_token
-    });
+    console.log('Step 5.1: Getting auth token from localStorage');
+    const authStorage = localStorage.getItem('homitra-auth-token');
+    console.log('Auth storage exists:', !!authStorage);
 
-    if (!sessionData.session?.access_token) {
-      console.error('✗ No access token available');
-      throw new Error('Authentication session expired. Please refresh and try again.');
+    let accessToken: string | null = null;
+    if (authStorage) {
+      try {
+        const parsed = JSON.parse(authStorage);
+        accessToken = parsed?.access_token || null;
+        console.log('Access token found:', !!accessToken);
+        console.log('Token preview:', accessToken ? accessToken.substring(0, 20) + '...' : 'null');
+      } catch (e) {
+        console.error('Failed to parse auth storage:', e);
+      }
     }
 
+    if (!accessToken) {
+      console.error('✗ No access token available in localStorage');
+      throw new Error('Authentication session expired. Please log in again.');
+    }
+
+    console.log('Step 5.2: Using native fetch to insert booking');
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/bookings`;
+    console.log('URL:', url);
+    console.log('API Key exists:', !!import.meta.env.VITE_SUPABASE_ANON_KEY);
+
     try {
-      console.log('About to call supabase.from(bookings).insert()...');
+      console.log('Making POST request with fetch...');
 
-      const insertPromise = supabase
-        .from('bookings')
-        .insert(bookingRecord)
-        .select()
-        .single();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        console.error('✗ Request timeout after 10 seconds');
+        controller.abort();
+      }, 10000);
 
-      console.log('Awaiting insert promise with 15 second timeout...');
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation',
+        },
+        body: JSON.stringify(bookingRecord),
+        signal: controller.signal,
+      });
 
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Database insert timed out after 15 seconds')), 15000)
-      );
+      clearTimeout(timeoutId);
 
-      const { data, error } = await Promise.race([insertPromise, timeoutPromise]) as any;
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
 
-      console.log('Insert promise resolved');
-      console.log('Error?', error);
-      console.log('Data?', data);
-
-      if (error) {
-        console.error('✗ Database error:', error);
-        console.error('Error code:', error.code);
-        console.error('Error message:', error.message);
-        console.error('Error details:', error.details);
-        console.error('Error hint:', error.hint);
-        console.error('Full error object:', JSON.stringify(error, null, 2));
-        throw new Error(`Database error: ${error.message}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('✗ Insert failed:', response.status, errorText);
+        throw new Error(`Database insert failed: ${response.status} - ${errorText}`);
       }
 
-      if (!data) {
-        console.error('✗ No data returned from insert');
-        throw new Error('No booking data returned from database');
-      }
-
+      const data = await response.json();
       console.log('✓ Booking saved successfully!');
-      console.log('Booking ID:', data.id);
-      console.log('Booking data:', data);
+      console.log('Response data:', data);
 
-      return { success: true, bookingId: data.id };
+      const bookingId = Array.isArray(data) ? data[0]?.id : data?.id;
+      console.log('Booking ID:', bookingId);
+
+      if (!bookingId) {
+        console.error('✗ No booking ID in response');
+        throw new Error('No booking ID returned from database');
+      }
+
+      return { success: true, bookingId };
     } catch (error: any) {
-      console.error('✗ Supabase client insert failed:', error.message);
+      console.error('✗ Insert failed with error:', error);
+      console.error('Error name:', error.name);
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
 
-      if (error.message?.includes('timed out')) {
-        console.log('⚠ Attempting fallback with native fetch...');
-
-        try {
-          const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/bookings`;
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-              'Authorization': `Bearer ${sessionData.session!.access_token}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'return=representation',
-            },
-            body: JSON.stringify(bookingRecord),
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error('✗ Fallback fetch failed:', response.status, errorText);
-            throw new Error(`Fallback insert failed: ${response.status} ${errorText}`);
-          }
-
-          const fallbackData = await response.json();
-          console.log('✓ Fallback insert successful!', fallbackData);
-
-          return { success: true, bookingId: fallbackData[0]?.id || 'unknown' };
-        } catch (fallbackError: any) {
-          console.error('✗ Fallback also failed:', fallbackError);
-          throw new Error(`Both insert attempts failed: ${fallbackError.message}`);
-        }
+      if (error.name === 'AbortError') {
+        throw new Error('Database request timed out. Please check your connection and try again.');
       }
 
       throw error;
