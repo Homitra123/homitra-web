@@ -129,17 +129,19 @@ const ServiceBooking = () => {
       serviceId: service.id,
       serviceName: service.name,
       tier: selectedTierData.name,
+      bookingMode: isMultipleBooking ? 'multiple' : 'single',
+      duration: data.duration ? `${data.duration} min` : '1 hour',
       date: isMultipleBooking ? scheduledBookings[0].date : data.date,
       dates: isMultipleBooking ? scheduledBookings.map(b => b.date) : [data.date],
+      weekdays: [],
       timeSlot: isMultipleBooking ? scheduledBookings[0].timeSlot : data.timeSlot,
-      scheduledBookings: isMultipleBooking ? scheduledBookings : undefined,
+      flexibleBookings: isMultipleBooking ? scheduledBookings : null,
       location: data.location,
       address: data.address,
       price: isMultipleBooking
         ? selectedTierData.price * scheduledBookings.length
         : selectedTierData.price,
       visits: isMultipleBooking ? scheduledBookings.length : 1,
-      isMultipleBooking,
     };
 
     navigate('/checkout', { state: { bookingData } });
