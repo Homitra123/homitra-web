@@ -24,18 +24,26 @@ const Bookings = () => {
 
   useEffect(() => {
     if (user) {
+      console.log('[Bookings] User or route changed, fetching bookings...');
       fetchBookings();
     }
-  }, [user]);
+  }, [user, location.pathname]);
 
   const fetchBookings = async () => {
-    if (!user) return;
+    console.log('[Bookings] === FETCH BOOKINGS START ===');
 
+    if (!user) {
+      console.log('[Bookings] ✗ No user, skipping fetch');
+      return;
+    }
+
+    console.log('[Bookings] Step 1: User ID:', user.id);
     setContentLoading(true);
     setError(false);
     setErrorMessage('');
 
     try {
+      console.log('[Bookings] Step 2: Querying database');
       const { data, error: fetchError } = await supabase
         .from('bookings')
         .select('*')
@@ -43,17 +51,28 @@ const Bookings = () => {
         .order('created_at', { ascending: false });
 
       if (fetchError) {
+        console.error('[Bookings] ✗ Database error:', fetchError);
+        console.error('[Bookings] Error details:', fetchError.message, fetchError.code);
         throw new Error(`Database error: ${fetchError.message}`);
+      }
+
+      console.log('[Bookings] ✓ Query successful!');
+      console.log('[Bookings] Number of bookings:', data?.length || 0);
+      if (data && data.length > 0) {
+        console.log('[Bookings] First booking:', data[0].id, data[0].service_name);
       }
 
       setBookings(data || []);
     } catch (err: any) {
-      console.error('[Bookings] Error fetching bookings:', err);
+      console.error('[Bookings] ✗ Exception:', err.message);
       setError(true);
       setErrorMessage('Unable to load bookings. Please try again.');
     } finally {
+      console.log('[Bookings] Setting loading to false');
       setContentLoading(false);
     }
+
+    console.log('[Bookings] === FETCH BOOKINGS END ===');
   };
 
   const activeBookings = bookings.filter(

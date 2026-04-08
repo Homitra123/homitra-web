@@ -43,38 +43,55 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
   }, []);
 
   const completeBooking = async (razorpayPaymentId: string) => {
-    try {
-      console.log('=== SAVING BOOKING TO DATABASE ===');
-      console.log('Razorpay Payment ID:', razorpayPaymentId);
+    console.log('=== SAVING BOOKING TO DATABASE ===');
+    console.log('Step 1: Validating payment ID:', razorpayPaymentId);
 
-      if (!user?.id) {
-        console.error('User not authenticated');
-        throw new Error('User not authenticated');
-      }
+    if (!razorpayPaymentId) {
+      console.error('✗ No payment ID provided');
+      throw new Error('Payment ID is missing');
+    }
 
-      if (!bookingData.date || !bookingData.timeSlot || !bookingData.location) {
-        console.error('Missing required booking fields');
-        throw new Error('Missing required booking information');
-      }
+    console.log('Step 2: Checking user authentication');
+    if (!user?.id) {
+      console.error('✗ User not authenticated, user:', user);
+      throw new Error('User not authenticated');
+    }
+    console.log('✓ User authenticated:', user.id);
 
-      const bookingRecord = {
-        user_id: user.id,
-        service_id: bookingData.serviceId,
-        service_name: bookingData.serviceName,
-        tier: bookingData.tier || 'Standard',
-        booking_mode: bookingData.bookingMode || 'single',
-        duration: bookingData.duration || '1 hour',
+    console.log('Step 3: Validating booking data');
+    console.log('Booking data received:', JSON.stringify(bookingData, null, 2));
+
+    if (!bookingData.date || !bookingData.timeSlot || !bookingData.location) {
+      console.error('✗ Missing required fields:', {
         date: bookingData.date,
-        time_slot: bookingData.timeSlot,
-        location: bookingData.location,
-        address: bookingData.address || bookingData.location,
-        price: amount,
-        status: 'confirmed',
-        payment_id: razorpayPaymentId,
-      };
+        timeSlot: bookingData.timeSlot,
+        location: bookingData.location
+      });
+      throw new Error('Missing required booking information');
+    }
+    console.log('✓ All required fields present');
 
-      console.log('Inserting booking with Supabase client:', bookingRecord);
+    console.log('Step 4: Preparing booking record');
+    const bookingRecord = {
+      user_id: user.id,
+      service_id: bookingData.serviceId || 'unknown',
+      service_name: bookingData.serviceName,
+      tier: bookingData.tier || 'Standard',
+      booking_mode: bookingData.bookingMode || 'single',
+      duration: bookingData.duration || '1 hour',
+      date: bookingData.date,
+      time_slot: bookingData.timeSlot,
+      location: bookingData.location,
+      address: bookingData.address || bookingData.location,
+      price: amount,
+      status: 'confirmed',
+      payment_id: razorpayPaymentId,
+    };
 
+    console.log('Step 5: Inserting booking into database');
+    console.log('Booking record:', JSON.stringify(bookingRecord, null, 2));
+
+    try {
       const { data, error } = await supabase
         .from('bookings')
         .insert(bookingRecord)
@@ -82,14 +99,25 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
         .single();
 
       if (error) {
-        console.error('Database error:', error);
-        throw error;
+        console.error('✗ Database error:', error);
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
+        console.error('Error details:', error.details);
+        throw new Error(`Database error: ${error.message}`);
       }
 
-      console.log('✓ Booking saved successfully:', data.id);
+      if (!data) {
+        console.error('✗ No data returned from insert');
+        throw new Error('No booking data returned from database');
+      }
+
+      console.log('✓ Booking saved successfully!');
+      console.log('Booking ID:', data.id);
+      console.log('Booking data:', data);
+
       return { success: true, bookingId: data.id };
     } catch (error: any) {
-      console.error('✗ Error saving booking:', error);
+      console.error('✗ Exception during database operation:', error);
       throw error;
     }
   };
@@ -123,19 +151,25 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
 
           try {
             const result = await completeBooking(response.razorpay_payment_id);
+            console.log('✓ Booking completed successfully, result:', result);
+            console.log('Booking ID:', result.bookingId);
 
-            console.log('Booking saved, redirecting to success page...');
+            console.log('Waiting 500ms to ensure database commit...');
+            await new Promise(resolve => setTimeout(resolve, 500));
 
-            setIsProcessing(false);
+            console.log('Closing modal and navigating to success page...');
             onClose();
 
-            navigate('/booking-success', {
-              replace: true,
-              state: { bookingId: result.bookingId }
-            });
+            setTimeout(() => {
+              navigate('/booking-success', {
+                replace: true,
+                state: { bookingId: result.bookingId }
+              });
+            }, 100);
           } catch (error: any) {
-            console.error('Failed to complete booking:', error);
-            setError('Payment successful but booking failed to save. Please contact support.');
+            console.error('✗ Failed to complete booking:', error);
+            console.error('Error details:', error.message, error.code, error.details);
+            setError('Payment successful but booking failed to save. Please contact support with payment ID: ' + response.razorpay_payment_id);
             setIsProcessing(false);
           }
         },

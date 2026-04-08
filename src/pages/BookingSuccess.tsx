@@ -34,66 +34,127 @@ const BookingSuccess = () => {
     };
   }, [bookingId]);
 
-  const fetchBooking = async () => {
-    console.log('[BookingSuccess] Fetching booking, ID:', bookingId || 'none (will fetch latest)');
+  const fetchBooking = async (retryCount = 0, maxRetries = 5) => {
+    const delayMs = Math.min(1000 * Math.pow(1.5, retryCount), 5000);
 
-    if (!isMountedRef.current) return;
+    console.log('[BookingSuccess] === FETCH BOOKING START ===');
+    console.log('[BookingSuccess] Retry attempt:', retryCount + 1, 'of', maxRetries + 1);
+    console.log('[BookingSuccess] Step 1: Booking ID from state/params:', bookingId);
+
+    if (!isMountedRef.current) {
+      console.log('[BookingSuccess] Component unmounted, aborting fetch');
+      return;
+    }
 
     try {
+      console.log('[BookingSuccess] Step 2: Getting authenticated user');
       const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current) {
+        console.log('[BookingSuccess] Component unmounted after auth check');
+        return;
+      }
 
-      if (userError || !user) {
-        console.error('[BookingSuccess] Not authenticated');
+      if (userError) {
+        console.error('[BookingSuccess] ✗ Auth error:', userError);
         navigate('/login');
         return;
       }
 
-      console.log('[BookingSuccess] User:', user.id);
+      if (!user) {
+        console.error('[BookingSuccess] ✗ No user found');
+        navigate('/login');
+        return;
+      }
+
+      console.log('[BookingSuccess] ✓ User authenticated:', user.id);
 
       let data, fetchError;
 
       if (bookingId) {
-        console.log('[BookingSuccess] Fetching specific booking:', bookingId);
+        console.log('[BookingSuccess] Step 3: Fetching specific booking:', bookingId);
+        console.log('[BookingSuccess] Query: bookings where id =', bookingId, 'AND user_id =', user.id);
+
         const result = await supabase
           .from('bookings')
           .select('*')
           .eq('id', bookingId)
           .eq('user_id', user.id)
           .maybeSingle();
+
+        console.log('[BookingSuccess] Query result:', { data: result.data, error: result.error });
         data = result.data ? [result.data] : [];
         fetchError = result.error;
       } else {
-        console.log('[BookingSuccess] Fetching latest booking for user');
+        console.log('[BookingSuccess] Step 3: No booking ID, fetching latest booking');
+        console.log('[BookingSuccess] Query: latest booking for user_id =', user.id);
+
         const result = await supabase
           .from('bookings')
           .select('*')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
           .limit(1);
+
+        console.log('[BookingSuccess] Query result:', { count: result.data?.length, error: result.error });
         data = result.data;
         fetchError = result.error;
       }
 
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current) {
+        console.log('[BookingSuccess] Component unmounted after query');
+        return;
+      }
 
       if (fetchError) {
-        console.error('[BookingSuccess] Fetch error:', fetchError);
+        console.error('[BookingSuccess] ✗ Database error:', fetchError);
+        console.error('[BookingSuccess] Error code:', fetchError.code);
+        console.error('[BookingSuccess] Error message:', fetchError.message);
+        setContentLoading(false);
       } else if (data && data.length > 0) {
-        console.log('[BookingSuccess] ✓ Booking loaded:', data[0].id);
+        console.log('[BookingSuccess] ✓ Booking loaded successfully!');
+        console.log('[BookingSuccess] Booking ID:', data[0].id);
+        console.log('[BookingSuccess] Service:', data[0].service_name);
+        console.log('[BookingSuccess] Status:', data[0].status);
         setBooking(data[0]);
+        setContentLoading(false);
       } else {
-        console.warn('[BookingSuccess] No booking found');
+        console.warn('[BookingSuccess] ⚠ No booking found in database (attempt', retryCount + 1, 'of', maxRetries + 1, ')');
+
+        if (retryCount < maxRetries) {
+          console.log('[BookingSuccess] Retrying in', delayMs, 'ms...');
+          setTimeout(() => {
+            if (isMountedRef.current) {
+              fetchBooking(retryCount + 1, maxRetries);
+            }
+          }, delayMs);
+        } else {
+          console.error('[BookingSuccess] ✗ Max retries reached, booking not found');
+          setContentLoading(false);
+        }
       }
     } catch (err: any) {
-      if (!isMountedRef.current) return;
-      console.error('[BookingSuccess] Error:', err);
-    } finally {
-      if (isMountedRef.current) {
+      if (!isMountedRef.current) {
+        console.log('[BookingSuccess] Component unmounted during error');
+        return;
+      }
+      console.error('[BookingSuccess] ✗ Exception occurred:', err);
+      console.error('[BookingSuccess] Exception message:', err.message);
+      console.error('[BookingSuccess] Exception stack:', err.stack);
+
+      if (retryCount < maxRetries) {
+        console.log('[BookingSuccess] Retrying after exception in', delayMs, 'ms...');
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            fetchBooking(retryCount + 1, maxRetries);
+          }
+        }, delayMs);
+      } else {
         setContentLoading(false);
       }
     }
+
+    console.log('[BookingSuccess] === FETCH BOOKING END ===');
   };
 
   const formatDate = (dateString: string) => {
