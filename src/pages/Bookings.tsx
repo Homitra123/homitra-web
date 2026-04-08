@@ -43,18 +43,48 @@ const Bookings = () => {
     setErrorMessage('');
 
     try {
-      console.log('[Bookings] Step 2: Querying database');
-      const { data, error: fetchError } = await supabase
-        .from('bookings')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      console.log('[Bookings] Step 2: Getting auth token from localStorage');
+      const authStorage = localStorage.getItem('homitra-auth-token');
 
-      if (fetchError) {
-        console.error('[Bookings] ✗ Database error:', fetchError);
-        console.error('[Bookings] Error details:', fetchError.message, fetchError.code);
-        throw new Error(`Database error: ${fetchError.message}`);
+      if (!authStorage) {
+        throw new Error('No authentication token found');
       }
+
+      let accessToken: string | null = null;
+      try {
+        const parsed = JSON.parse(authStorage);
+        accessToken = parsed?.access_token || null;
+      } catch (e) {
+        throw new Error('Failed to parse authentication data');
+      }
+
+      if (!accessToken) {
+        throw new Error('Invalid authentication token');
+      }
+
+      console.log('[Bookings] Step 3: Fetching bookings with native fetch');
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/bookings?user_id=eq.${user.id}&select=*&order=created_at.desc`;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      const response = await fetch(url, {
+        headers: {
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Bookings] ✗ Fetch failed:', response.status, errorText);
+        throw new Error(`Failed to fetch bookings: ${response.status}`);
+      }
+
+      const data = await response.json();
 
       console.log('[Bookings] ✓ Query successful!');
       console.log('[Bookings] Number of bookings:', data?.length || 0);
@@ -66,7 +96,11 @@ const Bookings = () => {
     } catch (err: any) {
       console.error('[Bookings] ✗ Exception:', err.message);
       setError(true);
-      setErrorMessage('Unable to load bookings. Please try again.');
+      if (err.name === 'AbortError') {
+        setErrorMessage('Request timed out. Please check your connection and try again.');
+      } else {
+        setErrorMessage('Unable to load bookings. Please try again.');
+      }
     } finally {
       console.log('[Bookings] Setting loading to false');
       setContentLoading(false);

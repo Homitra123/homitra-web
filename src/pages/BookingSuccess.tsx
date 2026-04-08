@@ -47,58 +47,118 @@ const BookingSuccess = () => {
     }
 
     try {
-      console.log('[BookingSuccess] Step 2: Getting authenticated user');
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      console.log('[BookingSuccess] Step 2: Getting auth token from localStorage');
+      const authStorage = localStorage.getItem('homitra-auth-token');
+
+      if (!authStorage) {
+        console.error('[BookingSuccess] ✗ No auth token in localStorage');
+        navigate('/login');
+        return;
+      }
+
+      let accessToken: string | null = null;
+      let userId: string | null = null;
+
+      try {
+        const parsed = JSON.parse(authStorage);
+        accessToken = parsed?.access_token || null;
+        userId = parsed?.user?.id || null;
+        console.log('[BookingSuccess] ✓ User ID from token:', userId);
+      } catch (e) {
+        console.error('[BookingSuccess] ✗ Failed to parse auth storage:', e);
+        navigate('/login');
+        return;
+      }
+
+      if (!accessToken || !userId) {
+        console.error('[BookingSuccess] ✗ Invalid auth data');
+        navigate('/login');
+        return;
+      }
 
       if (!isMountedRef.current) {
         console.log('[BookingSuccess] Component unmounted after auth check');
         return;
       }
 
-      if (userError) {
-        console.error('[BookingSuccess] ✗ Auth error:', userError);
-        navigate('/login');
-        return;
-      }
-
-      if (!user) {
-        console.error('[BookingSuccess] ✗ No user found');
-        navigate('/login');
-        return;
-      }
-
-      console.log('[BookingSuccess] ✓ User authenticated:', user.id);
-
       let data, fetchError;
 
       if (bookingId) {
         console.log('[BookingSuccess] Step 3: Fetching specific booking:', bookingId);
-        console.log('[BookingSuccess] Query: bookings where id =', bookingId, 'AND user_id =', user.id);
+        console.log('[BookingSuccess] Query: bookings where id =', bookingId, 'AND user_id =', userId);
 
-        const result = await supabase
-          .from('bookings')
-          .select('*')
-          .eq('id', bookingId)
-          .eq('user_id', user.id)
-          .maybeSingle();
+        const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/bookings?id=eq.${bookingId}&user_id=eq.${userId}&select=*`;
 
-        console.log('[BookingSuccess] Query result:', { data: result.data, error: result.error });
-        data = result.data ? [result.data] : [];
-        fetchError = result.error;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+        try {
+          const response = await fetch(url, {
+            headers: {
+              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${accessToken}`,
+            },
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[BookingSuccess] ✗ Fetch failed:', response.status, errorText);
+            fetchError = new Error(`Failed to fetch booking: ${response.status}`);
+            data = [];
+          } else {
+            data = await response.json();
+            console.log('[BookingSuccess] Query result:', { data: data, count: data?.length });
+          }
+        } catch (err: any) {
+          if (err.name === 'AbortError') {
+            console.error('[BookingSuccess] ✗ Request timeout');
+            fetchError = new Error('Request timeout');
+          } else {
+            throw err;
+          }
+          data = [];
+        }
       } else {
         console.log('[BookingSuccess] Step 3: No booking ID, fetching latest booking');
-        console.log('[BookingSuccess] Query: latest booking for user_id =', user.id);
+        console.log('[BookingSuccess] Query: latest booking for user_id =', userId);
 
-        const result = await supabase
-          .from('bookings')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(1);
+        const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/bookings?user_id=eq.${userId}&select=*&order=created_at.desc&limit=1`;
 
-        console.log('[BookingSuccess] Query result:', { count: result.data?.length, error: result.error });
-        data = result.data;
-        fetchError = result.error;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+        try {
+          const response = await fetch(url, {
+            headers: {
+              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${accessToken}`,
+            },
+            signal: controller.signal,
+          });
+
+          clearTimeout(timeoutId);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[BookingSuccess] ✗ Fetch failed:', response.status, errorText);
+            fetchError = new Error(`Failed to fetch booking: ${response.status}`);
+            data = [];
+          } else {
+            data = await response.json();
+            console.log('[BookingSuccess] Query result:', { count: data?.length });
+          }
+        } catch (err: any) {
+          if (err.name === 'AbortError') {
+            console.error('[BookingSuccess] ✗ Request timeout');
+            fetchError = new Error('Request timeout');
+          } else {
+            throw err;
+          }
+          data = [];
+        }
       }
 
       if (!isMountedRef.current) {
