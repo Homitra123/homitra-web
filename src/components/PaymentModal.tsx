@@ -95,6 +95,18 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
     console.log('Step 5: Inserting booking into database');
     console.log('Booking record:', JSON.stringify(bookingRecord, null, 2));
 
+    const { data: sessionData } = await supabase.auth.getSession();
+    console.log('Session check:', {
+      hasSession: !!sessionData.session,
+      userId: sessionData.session?.user?.id,
+      hasAccessToken: !!sessionData.session?.access_token
+    });
+
+    if (!sessionData.session?.access_token) {
+      console.error('✗ No access token available');
+      throw new Error('Authentication session expired. Please refresh and try again.');
+    }
+
     try {
       console.log('About to call supabase.from(bookings).insert()...');
 
@@ -104,8 +116,13 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
         .select()
         .single();
 
-      console.log('Awaiting insert promise...');
-      const { data, error } = await insertPromise;
+      console.log('Awaiting insert promise with 15 second timeout...');
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Database insert timed out after 15 seconds')), 15000)
+      );
+
+      const { data, error } = await Promise.race([insertPromise, timeoutPromise]) as any;
 
       console.log('Insert promise resolved');
       console.log('Error?', error);
@@ -132,8 +149,40 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
 
       return { success: true, bookingId: data.id };
     } catch (error: any) {
-      console.error('✗ Exception during database operation:', error);
-      console.error('✗ Error stack:', error.stack);
+      console.error('✗ Supabase client insert failed:', error.message);
+
+      if (error.message?.includes('timed out')) {
+        console.log('⚠ Attempting fallback with native fetch...');
+
+        try {
+          const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/bookings`;
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+              'Authorization': `Bearer ${sessionData.session!.access_token}`,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=representation',
+            },
+            body: JSON.stringify(bookingRecord),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('✗ Fallback fetch failed:', response.status, errorText);
+            throw new Error(`Fallback insert failed: ${response.status} ${errorText}`);
+          }
+
+          const fallbackData = await response.json();
+          console.log('✓ Fallback insert successful!', fallbackData);
+
+          return { success: true, bookingId: fallbackData[0]?.id || 'unknown' };
+        } catch (fallbackError: any) {
+          console.error('✗ Fallback also failed:', fallbackError);
+          throw new Error(`Both insert attempts failed: ${fallbackError.message}`);
+        }
+      }
+
       throw error;
     }
   };
