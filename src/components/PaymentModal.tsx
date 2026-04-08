@@ -58,6 +58,18 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
     }
     console.log('✓ User authenticated:', user.id);
 
+    // Check Supabase session
+    const { data: sessionData } = await supabase.auth.getSession();
+    console.log('Supabase session:', sessionData.session ? 'Active' : 'None');
+    console.log('Session user ID:', sessionData.session?.user?.id);
+    console.log('Access token present:', !!sessionData.session?.access_token);
+
+    if (!sessionData.session) {
+      console.error('✗ No active Supabase session');
+      alert('Authentication session expired. Please refresh the page and try again.');
+      throw new Error('No active authentication session');
+    }
+
     console.log('Step 3: Validating booking data');
     console.log('Booking data received:', JSON.stringify(bookingData, null, 2));
 
@@ -96,32 +108,48 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
     console.log('Booking record:', JSON.stringify(bookingRecord, null, 2));
 
     try {
-      const { data, error } = await supabase
+      console.log('About to call supabase.from(bookings).insert()...');
+
+      const insertPromise = supabase
         .from('bookings')
         .insert(bookingRecord)
         .select()
         .single();
+
+      console.log('Awaiting insert promise...');
+      const { data, error } = await insertPromise;
+
+      console.log('Insert promise resolved');
+      console.log('Error?', error);
+      console.log('Data?', data);
 
       if (error) {
         console.error('✗ Database error:', error);
         console.error('Error code:', error.code);
         console.error('Error message:', error.message);
         console.error('Error details:', error.details);
+        console.error('Error hint:', error.hint);
+        console.error('Full error object:', JSON.stringify(error, null, 2));
+        alert(`Database insert failed: ${error.message}\nCode: ${error.code}\nDetails: ${JSON.stringify(error.details)}`);
         throw new Error(`Database error: ${error.message}`);
       }
 
       if (!data) {
         console.error('✗ No data returned from insert');
+        alert('No data returned from database insert');
         throw new Error('No booking data returned from database');
       }
 
       console.log('✓ Booking saved successfully!');
       console.log('Booking ID:', data.id);
       console.log('Booking data:', data);
+      alert(`Success! Booking ID: ${data.id}`);
 
       return { success: true, bookingId: data.id };
     } catch (error: any) {
       console.error('✗ Exception during database operation:', error);
+      console.error('✗ Error stack:', error.stack);
+      alert(`Exception: ${error.message}`);
       throw error;
     }
   };
