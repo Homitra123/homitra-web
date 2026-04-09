@@ -1,5 +1,4 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,6 +19,18 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
+async function dbQuery(url: string, key: string, table: string, filter: string) {
+  const res = await fetch(`${url}/rest/v1/${table}?${filter}&limit=1`, {
+    headers: {
+      "apikey": key,
+      "Authorization": `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+  });
+  const rows = await res.json();
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -29,19 +40,10 @@ Deno.serve(async (req: Request) => {
     const { booking_id, user_id } = await req.json();
     console.log(`[notification] booking_id=${booking_id} user_id=${user_id}`);
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    const { data: booking, error: bookingError } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("id", booking_id)
-      .maybeSingle();
-
-    if (bookingError) console.error("[notification] booking fetch error:", bookingError);
-
+    const booking = await dbQuery(SUPABASE_URL, SERVICE_KEY, "bookings", `id=eq.${booking_id}`);
     if (!booking) {
       console.error("[notification] booking not found for id:", booking_id);
       return new Response(JSON.stringify({ success: true }), {
@@ -50,13 +52,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user_id)
-      .maybeSingle();
-
-    if (profileError) console.error("[notification] profile fetch error:", profileError);
+    const profile = await dbQuery(SUPABASE_URL, SERVICE_KEY, "profiles", `id=eq.${user_id}`);
 
     const customerName = profile?.full_name || "Customer";
     const customerEmail = profile?.email || "";
@@ -77,48 +73,23 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[notification] RESEND_API_KEY present=${!!RESEND_API_KEY} FAST2SMS_API_KEY present=${!!FAST2SMS_API_KEY}`);
 
-    const tableRowStyle = `style="border-bottom:1px solid #e5e7eb"`;
-    const altRowStyle = `style="border-bottom:1px solid #e5e7eb;background:#f9fafb"`;
-    const labelStyle = `style="padding:10px 14px;color:#6b7280;width:42%;font-size:14px"`;
-    const valueStyle = `style="padding:10px 14px;font-weight:600;font-size:14px;color:#111827"`;
+    const tr = `style="border-bottom:1px solid #e5e7eb"`;
+    const trAlt = `style="border-bottom:1px solid #e5e7eb;background:#f9fafb"`;
+    const td1 = `style="padding:10px 14px;color:#6b7280;width:42%;font-size:14px"`;
+    const td2 = `style="padding:10px 14px;font-weight:600;font-size:14px;color:#111827"`;
 
     if (RESEND_API_KEY) {
-      const adminEmailHtml = `
-        <div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#ffffff">
-          <div style="background:#1e40af;padding:24px 28px">
-            <h1 style="color:#ffffff;margin:0;font-size:20px">New Booking Received</h1>
-            <p style="color:#bfdbfe;margin:4px 0 0;font-size:13px">Booking Ref: #${bookingRef}</p>
-          </div>
-          <div style="padding:24px 28px">
-            <p style="color:#374151;margin:0 0 16px;font-size:14px">You have received a new booking on Homitra.</p>
-            <table style="border-collapse:collapse;width:100%">
-              <tr ${tableRowStyle}><td ${labelStyle}>Service</td><td ${valueStyle}>${serviceName}</td></tr>
-              <tr ${altRowStyle}><td ${labelStyle}>Amount</td><td ${valueStyle}>Rs. ${price}</td></tr>
-              <tr ${tableRowStyle}><td ${labelStyle}>Date</td><td ${valueStyle}>${bookingDate}</td></tr>
-              <tr ${altRowStyle}><td ${labelStyle}>Time Slot</td><td ${valueStyle}>${timeSlot}</td></tr>
-              <tr ${tableRowStyle}><td ${labelStyle}>Address</td><td ${valueStyle}>${address}</td></tr>
-              <tr style="border-bottom:1px solid #e5e7eb;background:#f9fafb"><td colspan="2" style="padding:8px 14px;font-size:12px;color:#9ca3af;font-weight:600;letter-spacing:0.05em">CUSTOMER DETAILS</td></tr>
-              <tr ${tableRowStyle}><td ${labelStyle}>Name</td><td ${valueStyle}>${customerName}</td></tr>
-              <tr ${altRowStyle}><td ${labelStyle}>Phone</td><td ${valueStyle}>${customerPhone || "N/A"}</td></tr>
-              <tr ${tableRowStyle}><td ${labelStyle}>Email</td><td ${valueStyle}>${customerEmail}</td></tr>
-            </table>
-            <p style="margin:20px 0 0;color:#6b7280;font-size:13px">Login to your dashboard to assign a partner.</p>
-          </div>
-        </div>
-      `;
+      const adminHtml = `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#ffffff"><div style="background:#1e40af;padding:24px 28px"><h1 style="color:#ffffff;margin:0;font-size:20px">New Booking Received</h1><p style="color:#bfdbfe;margin:4px 0 0;font-size:13px">Booking Ref: #${bookingRef}</p></div><div style="padding:24px 28px"><p style="color:#374151;margin:0 0 16px;font-size:14px">You have received a new booking on Homitra.</p><table style="border-collapse:collapse;width:100%"><tr ${tr}><td ${td1}>Service</td><td ${td2}>${serviceName}</td></tr><tr ${trAlt}><td ${td1}>Amount</td><td ${td2}>Rs. ${price}</td></tr><tr ${tr}><td ${td1}>Date</td><td ${td2}>${bookingDate}</td></tr><tr ${trAlt}><td ${td1}>Time Slot</td><td ${td2}>${timeSlot}</td></tr><tr ${tr}><td ${td1}>Address</td><td ${td2}>${address}</td></tr><tr style="border-bottom:1px solid #e5e7eb;background:#f9fafb"><td colspan="2" style="padding:8px 14px;font-size:12px;color:#9ca3af;font-weight:600;letter-spacing:0.05em">CUSTOMER DETAILS</td></tr><tr ${tr}><td ${td1}>Name</td><td ${td2}>${customerName}</td></tr><tr ${trAlt}><td ${td1}>Phone</td><td ${td2}>${customerPhone || "N/A"}</td></tr><tr ${tr}><td ${td1}>Email</td><td ${td2}>${customerEmail}</td></tr></table><p style="margin:20px 0 0;color:#6b7280;font-size:13px">Login to your dashboard to assign a partner.</p></div></div>`;
 
       try {
         const adminEmailRes = await fetch("https://api.resend.com/emails", {
           method: "POST",
-          headers: {
-            "Authorization": `Bearer ${RESEND_API_KEY}`,
-            "Content-Type": "application/json",
-          },
+          headers: { "Authorization": `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
           body: JSON.stringify({
             from: "Homitra Bookings <bookings@homitra.co.in>",
             to: [ADMIN_EMAIL],
             subject: `New Booking Received - ${serviceName} | #${bookingRef}`,
-            html: adminEmailHtml,
+            html: adminHtml,
           }),
         });
         const adminEmailBody = await adminEmailRes.text();
@@ -128,39 +99,17 @@ Deno.serve(async (req: Request) => {
       }
 
       if (customerEmail) {
-        const customerEmailHtml = `
-          <div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#ffffff">
-            <div style="background:#1e40af;padding:24px 28px">
-              <h1 style="color:#ffffff;margin:0;font-size:20px">Booking Confirmed!</h1>
-              <p style="color:#bfdbfe;margin:4px 0 0;font-size:13px">Ref: #${bookingRef}</p>
-            </div>
-            <div style="padding:24px 28px">
-              <p style="color:#374151;margin:0 0 16px;font-size:14px">Hi ${customerName}, your booking with Homitra is confirmed.</p>
-              <table style="border-collapse:collapse;width:100%">
-                <tr ${tableRowStyle}><td ${labelStyle}>Service</td><td ${valueStyle}>${serviceName}</td></tr>
-                <tr ${altRowStyle}><td ${labelStyle}>Amount</td><td ${valueStyle}>Rs. ${price}</td></tr>
-                <tr ${tableRowStyle}><td ${labelStyle}>Date</td><td ${valueStyle}>${bookingDate}</td></tr>
-                <tr ${altRowStyle}><td ${labelStyle}>Time Slot</td><td ${valueStyle}>${timeSlot}</td></tr>
-                <tr ${tableRowStyle}><td ${labelStyle}>Address</td><td ${valueStyle}>${address}</td></tr>
-              </table>
-              <p style="margin:20px 0 8px;color:#374151;font-size:14px">Our team will contact you shortly to confirm the details.</p>
-              <p style="margin:0;color:#6b7280;font-size:13px">Thank you for choosing Homitra!</p>
-            </div>
-          </div>
-        `;
+        const custHtml = `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#ffffff"><div style="background:#1e40af;padding:24px 28px"><h1 style="color:#ffffff;margin:0;font-size:20px">Booking Confirmed!</h1><p style="color:#bfdbfe;margin:4px 0 0;font-size:13px">Ref: #${bookingRef}</p></div><div style="padding:24px 28px"><p style="color:#374151;margin:0 0 16px;font-size:14px">Hi ${customerName}, your booking with Homitra is confirmed.</p><table style="border-collapse:collapse;width:100%"><tr ${tr}><td ${td1}>Service</td><td ${td2}>${serviceName}</td></tr><tr ${trAlt}><td ${td1}>Amount</td><td ${td2}>Rs. ${price}</td></tr><tr ${tr}><td ${td1}>Date</td><td ${td2}>${bookingDate}</td></tr><tr ${trAlt}><td ${td1}>Time Slot</td><td ${td2}>${timeSlot}</td></tr><tr ${tr}><td ${td1}>Address</td><td ${td2}>${address}</td></tr></table><p style="margin:20px 0 8px;color:#374151;font-size:14px">Our team will contact you shortly to confirm the details.</p><p style="margin:0;color:#6b7280;font-size:13px">Thank you for choosing Homitra!</p></div></div>`;
 
         try {
           const customerEmailRes = await fetch("https://api.resend.com/emails", {
             method: "POST",
-            headers: {
-              "Authorization": `Bearer ${RESEND_API_KEY}`,
-              "Content-Type": "application/json",
-            },
+            headers: { "Authorization": `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
             body: JSON.stringify({
               from: "Homitra Bookings <bookings@homitra.co.in>",
               to: [customerEmail],
               subject: `Booking Confirmed - ${serviceName}`,
-              html: customerEmailHtml,
+              html: custHtml,
             }),
           });
           const customerEmailBody = await customerEmailRes.text();
