@@ -149,11 +149,14 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
                     'Content-Type': 'application/json',
                   },
                   body: JSON.stringify({ booking_id: result.bookingId, user_id: user!.id }),
+                  keepalive: true,
                 }
               ).catch(() => {});
 
               setIsProcessing(false);
-              window.location.replace(`/booking-success?booking_id=${result.bookingId}`);
+              setTimeout(() => {
+                window.location.replace(`/booking-success?booking_id=${result.bookingId}`);
+              }, 300);
             })
             .catch(() => {
               setError(
