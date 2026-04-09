@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, ReactNode } from 'react';
-import { User, Booking, BookingFormData } from '../types';
+import { User, Booking } from '../types';
 import { mockUser, mockBookings } from '../data/mockData';
 
 interface AppContextType {

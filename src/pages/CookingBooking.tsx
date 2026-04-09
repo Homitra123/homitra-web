@@ -74,7 +74,7 @@ const CookingBooking = () => {
     );
   }
 
-  const getCurrentPrice = () => {
+  const getCurrentPrice = (): number => {
     const visitCount = getVisitCount();
     switch (bookingMode) {
       case 'single':
@@ -83,11 +83,9 @@ const CookingBooking = () => {
         return selectedDuration.singlePrice * visitCount;
       case 'custom':
         return selectedDuration.singlePrice * visitCount;
+      default:
+        return selectedDuration.singlePrice * visitCount;
     }
-  };
-
-  const getOriginalPrice = () => {
-    return Math.round(getCurrentPrice() * 1.5);
   };
 
   const getVisitCount = () => {
@@ -1068,7 +1066,7 @@ const CookingBooking = () => {
                       <div className="mt-4 pt-4 border-t border-gray-200">
                         <h5 className="font-semibold text-gray-900 mb-2 text-sm">Scheduled Bookings:</h5>
                         <div className="space-y-2">
-                          {flexibleBookings.map((booking, idx) => (
+                          {flexibleBookings.map((booking) => (
                             <div key={booking.id} className="flex justify-between items-center bg-orange-50 text-orange-700 px-3 py-2 rounded text-xs">
                               <span className="font-medium">
                                 {booking.date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}

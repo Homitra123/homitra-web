@@ -1,14 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, Mail, Phone, ChevronRight, LogOut, Bell, Shield, HelpCircle, CreditCard as Edit2, X, Check } from 'lucide-react';
+import { Mail, Phone, ChevronRight, LogOut, Bell, Shield, HelpCircle, CreditCard as Edit2, X, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { supabase, getSupabaseUrl, getSupabaseAnonKey } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 const Profile = () => {
   const { user, profile, signOut, updateProfile } = useAuth();
   const navigate = useNavigate();
-  const isInitialLoadRef = useRef(true);
-  const hasLoadedStatsRef = useRef(false);
   const [isEditingPhone, setIsEditingPhone] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
@@ -17,129 +15,38 @@ const Profile = () => {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [loadingStats, setLoadingStats] = useState(true);
-  const [bookingStats, setBookingStats] = useState({
-    total: 0,
-    completed: 0,
-    active: 0,
-  });
-  const [statsError, setStatsError] = useState(false);
-  const [debugInfo, setDebugInfo] = useState({
-    currentUserId: '',
-    fetchStatus: '',
-    rawDataCount: 0,
-    rlsBypassCount: 0,
-    timestamp: '',
-    loadAttempts: 0,
-    isInitialLoad: true,
-  });
+  const [bookingStats, setBookingStats] = useState({ total: 0, completed: 0, active: 0 });
 
   useEffect(() => {
-    console.log('[Profile] Re-rendering due to:', {
-      userId: user?.id,
-      profileId: profile?.id,
-      isInitialLoad: isInitialLoadRef.current,
-      hasLoadedOnce: hasLoadedStatsRef.current
-    });
-
     if (profile) {
       setPhoneNumber(profile.phone || '');
       setFullName(profile.full_name || '');
-
-      if (isInitialLoadRef.current) {
-        console.log('[Profile] First mount - loading stats');
-        fetchBookingStats(true);
-      } else if (hasLoadedStatsRef.current) {
-        console.log('[Profile] Navigation return - silently refreshing stats in background');
-        fetchBookingStats(false);
-      }
+    }
+    if (user) {
+      fetchBookingStats();
     }
   }, [user?.id, profile?.id]);
 
-  const fetchBookingStats = async (isInitial = false) => {
-    if (!user) {
-      console.log('[Profile] No user found');
-      return;
-    }
+  const fetchBookingStats = async () => {
+    if (!user) return;
 
-    const attemptNumber = (debugInfo.loadAttempts || 0) + 1;
-    console.log('[Profile] Starting stats fetch #', attemptNumber, 'for user UUID:', user.id);
-
-    if (isInitial && isInitialLoadRef.current) {
-      setLoadingStats(true);
-    }
-
-    setStatsError(false);
-
-    setDebugInfo(prev => ({
-      ...prev,
-      currentUserId: user.id,
-      fetchStatus: 'Fetching...',
-      rawDataCount: 0,
-      rlsBypassCount: 0,
-      timestamp: new Date().toLocaleTimeString(),
-      loadAttempts: attemptNumber,
-      isInitialLoad: isInitial,
-    }));
-
+    setLoadingStats(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error: fetchError } = await supabase
+        .from('bookings')
+        .select('status')
+        .eq('user_id', user.id);
 
-      if (!session || !session.access_token) {
-        console.error('[Profile] Auth Token Missing');
-        setStatsError(true);
-        setDebugInfo(prev => ({ ...prev, fetchStatus: 'Auth Failed' }));
-        setLoadingStats(false);
-        return;
-      }
+      if (fetchError) throw fetchError;
 
-      const baseUrl = getSupabaseUrl();
-      const anonKey = getSupabaseAnonKey();
-      const url = `${baseUrl}/rest/v1/bookings?user_id=eq.${user.id}&select=status`;
-
-      console.log('[Profile] Using native fetch with 2s timeout');
-
-      const response = await Promise.race([
-        fetch(url, {
-          method: 'GET',
-          mode: 'cors',
-          credentials: 'omit',
-          headers: {
-            'apikey': anonKey,
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-        }),
-        new Promise<Response>((_, reject) =>
-          setTimeout(() => reject(new Error('Fetch timeout')), 2000)
-        ),
-      ]) as Response;
-
-      if (!response.ok) {
-        console.error('[Profile] Fetch error:', response.status);
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const bookings = await response.json();
-      console.log('[Profile] Successfully loaded', bookings.length, 'booking records');
-
-      const total = bookings.length;
-      const completed = bookings.filter((b: any) => b.status === 'completed').length;
-      const active = bookings.filter((b: any) => b.status !== 'completed' && b.status !== 'cancelled').length;
+      const total = data?.length ?? 0;
+      const completed = data?.filter(b => b.status === 'completed').length ?? 0;
+      const active = data?.filter(b => b.status !== 'completed' && b.status !== 'cancelled').length ?? 0;
 
       setBookingStats({ total, completed, active });
-      setStatsError(false);
-      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Success', rawDataCount: total }));
-    } catch (err: any) {
-      console.error('[Profile] Fetch error:', err);
-      setStatsError(true);
-      setDebugInfo(prev => ({ ...prev, fetchStatus: 'Error: ' + err.message }));
+    } catch {
     } finally {
-      if (isInitial && isInitialLoadRef.current) {
-        console.log('[Profile] Initial stats load complete');
-        setLoadingStats(false);
-        isInitialLoadRef.current = false;
-        hasLoadedStatsRef.current = true;
-      }
+      setLoadingStats(false);
     }
   };
 
@@ -148,7 +55,6 @@ const Profile = () => {
       setError('Phone number is required');
       return;
     }
-
     if (phoneNumber.length < 10) {
       setError('Please enter a valid phone number');
       return;
@@ -160,20 +66,16 @@ const Profile = () => {
 
     try {
       const { error: updateError } = await updateProfile({ phone: phoneNumber });
-
-      if (updateError) {
-        throw new Error(updateError.message);
-      }
+      if (updateError) throw new Error(updateError.message);
 
       setIsEditingPhone(false);
       setSuccessMessage('Phone number updated successfully');
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err: any) {
-      console.error('[Profile] Update error:', err);
       setError(`Failed to update phone number: ${err.message}`);
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
   };
 
   const handleSaveName = async () => {
@@ -188,20 +90,16 @@ const Profile = () => {
 
     try {
       const { error: updateError } = await updateProfile({ full_name: fullName });
-
-      if (updateError) {
-        throw new Error(updateError.message);
-      }
+      if (updateError) throw new Error(updateError.message);
 
       setIsEditingName(false);
       setSuccessMessage('Name updated successfully');
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err: any) {
-      console.error('[Profile] Update error:', err);
       setError(`Failed to update name: ${err.message}`);
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
   };
 
   const handleLogout = async () => {
@@ -215,9 +113,7 @@ const Profile = () => {
     { icon: HelpCircle, label: 'Help & Support', description: 'Get assistance' },
   ];
 
-  if (!profile) {
-    return null;
-  }
+  if (!profile) return null;
 
   const getInitials = () => {
     if (profile.full_name) {
@@ -233,9 +129,7 @@ const Profile = () => {
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 mb-6">
         <div className="flex items-start space-x-4 mb-6">
           <div className="w-20 h-20 bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl flex items-center justify-center flex-shrink-0">
-            <span className="text-3xl font-bold text-white">
-              {getInitials()}
-            </span>
+            <span className="text-3xl font-bold text-white">{getInitials()}</span>
           </div>
           <div className="flex-1">
             {isEditingName ? (
@@ -331,9 +225,7 @@ const Profile = () => {
             ) : (
               <>
                 <Phone size={20} className="text-gray-400" />
-                <span className="text-gray-700">
-                  {profile.phone || 'No phone number'}
-                </span>
+                <span className="text-gray-700">{profile.phone || 'No phone number'}</span>
                 <button
                   onClick={() => setIsEditingPhone(true)}
                   className="p-2 hover:bg-gray-100 rounded-lg transition-colors ml-auto"
@@ -362,23 +254,12 @@ const Profile = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 mb-6 relative">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 mb-6">
         <h3 className="text-xl font-bold text-gray-900 mb-4">Booking Statistics</h3>
         {loadingStats ? (
           <div className="flex items-center justify-center space-x-3 py-6">
             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-            <p className="text-sm text-gray-600">Checking for bookings...</p>
-          </div>
-        ) : statsError ? (
-          <div className="text-center py-6">
-            <p className="text-gray-600 mb-1">Unable to load booking statistics</p>
-            <p className="text-sm text-gray-500 mb-4">Check console for details</p>
-            <button
-              onClick={() => fetchBookingStats(true)}
-              className="bg-blue-600 text-white py-2 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors text-sm"
-            >
-              Retry
-            </button>
+            <p className="text-sm text-gray-600">Loading statistics...</p>
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-4">
@@ -434,21 +315,6 @@ const Profile = () => {
       <div className="mt-8 text-center text-sm text-gray-500">
         <p>Homitra v1.0.0</p>
         <p className="mt-1">Premium Home Services</p>
-      </div>
-
-      <div className="mt-8 bg-black text-white p-6 rounded-xl font-mono text-xs">
-        <div className="font-bold mb-3 text-yellow-400">DEBUG INFO - PERSISTENT</div>
-        <div className="space-y-2">
-          <div><span className="text-gray-400">Current User UUID:</span> {debugInfo.currentUserId.slice(0, 20) || 'N/A'}...</div>
-          <div><span className="text-gray-400">Fetch Status:</span> {debugInfo.fetchStatus || 'Not started'}</div>
-          <div><span className="text-gray-400">Raw Data Count:</span> {debugInfo.rawDataCount}</div>
-          <div><span className="text-gray-400">RLS Bypass Count:</span> {debugInfo.rlsBypassCount}</div>
-          <div><span className="text-gray-400">Timestamp:</span> {debugInfo.timestamp || 'N/A'}</div>
-          <div><span className="text-gray-400">Load Attempts:</span> {debugInfo.loadAttempts}</div>
-          <div><span className="text-gray-400">Is Initial Load:</span> {debugInfo.isInitialLoad ? 'YES' : 'NO'}</div>
-          <div><span className="text-gray-400">Loading State:</span> {loadingStats ? 'TRUE' : 'FALSE'}</div>
-          <div><span className="text-gray-400">Has Loaded Once:</span> {hasLoadedStatsRef.current ? 'YES' : 'NO'}</div>
-        </div>
       </div>
     </div>
   );

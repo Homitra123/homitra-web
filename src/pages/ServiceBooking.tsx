@@ -85,9 +85,9 @@ const ServiceBooking = () => {
   const addBooking = (data: BookingFormData) => {
     const newBooking: ScheduledBooking = {
       id: `${data.date}-${data.timeSlot}-${Date.now()}`,
-      date: data.date,
-      timeSlot: data.timeSlot,
-      displayDate: formatDisplayDate(data.date),
+      date: data.date ?? '',
+      timeSlot: data.timeSlot ?? '',
+      displayDate: formatDisplayDate(data.date ?? ''),
     };
 
     setScheduledBookings([...scheduledBookings, newBooking]);

@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -18,10 +17,11 @@ interface PaymentModalProps {
 
 const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingLabel, setProcessingLabel] = useState('Opening Payment Gateway...');
   const [error, setError] = useState('');
   const [razorpayLoaded, setRazorpayLoaded] = useState(false);
   const { user, profile } = useAuth();
-  const navigate = useNavigate();
+  const accessTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     const script = document.createElement('script');
@@ -29,22 +29,20 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
     script.async = true;
     script.onload = () => setRazorpayLoaded(true);
     script.onerror = () => {
-      console.error('Failed to load Razorpay SDK');
       setError('Failed to load payment gateway. Please refresh and try again.');
     };
     document.body.appendChild(script);
 
     return () => {
-      document.body.removeChild(script);
+      if (document.body.contains(script)) {
+        document.body.removeChild(script);
+      }
     };
   }, []);
 
   const completeBooking = async (razorpayPaymentId: string) => {
     if (!razorpayPaymentId) throw new Error('Payment ID is missing');
     if (!user?.id) throw new Error('User not authenticated');
-    if (!bookingData.date || !bookingData.timeSlot || !bookingData.location) {
-      throw new Error('Missing required booking information');
-    }
 
     const bookingRecord = {
       user_id: user.id,
@@ -66,16 +64,45 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
       payment_id: razorpayPaymentId,
     };
 
-    const { data, error } = await supabase
-      .from('bookings')
-      .insert(bookingRecord)
-      .select('id')
-      .single();
+    const token = accessTokenRef.current;
+    if (!token) throw new Error('Session expired. Please log in again.');
 
-    if (error) throw new Error(error.message);
-    if (!data?.id) throw new Error('No booking ID returned from database');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
-    return { success: true, bookingId: data.id };
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/bookings`,
+        {
+          method: 'POST',
+          headers: {
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=representation',
+          },
+          body: JSON.stringify(bookingRecord),
+          signal: controller.signal,
+        }
+      );
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Failed to save booking: ${text}`);
+      }
+
+      const data = await response.json();
+      const bookingId = Array.isArray(data) ? data[0]?.id : data?.id;
+      if (!bookingId) throw new Error('No booking ID returned');
+
+      return { bookingId };
+    } catch (err: any) {
+      clearTimeout(timeout);
+      if (err.name === 'AbortError') throw new Error('Request timed out. Please check your connection.');
+      throw err;
+    }
   };
 
   const handlePayment = async () => {
@@ -83,14 +110,22 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
       setError('You must be logged in to complete booking');
       return;
     }
-
     if (!razorpayLoaded) {
       setError('Payment gateway is loading. Please wait a moment and try again.');
       return;
     }
 
     setIsProcessing(true);
+    setProcessingLabel('Opening Payment Gateway...');
     setError('');
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      setError('Session expired. Please log in again.');
+      setIsProcessing(false);
+      return;
+    }
+    accessTokenRef.current = session.access_token;
 
     try {
       const options = {
@@ -101,26 +136,30 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
         description: bookingData.serviceName,
         image: '/Home_Assiatnt_Pic.png',
         handler: function (response: any) {
+          setProcessingLabel('Saving your booking...');
+
           completeBooking(response.razorpay_payment_id)
             .then((result) => {
-              fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-booking-notification`, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ booking_id: result.bookingId, user_id: user!.id }),
-              }).catch(() => {});
+              fetch(
+                `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-booking-notification`,
+                {
+                  method: 'POST',
+                  headers: {
+                    Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ booking_id: result.bookingId, user_id: user!.id }),
+                }
+              ).catch(() => {});
 
               setIsProcessing(false);
-              navigate('/booking-success', {
-                replace: true,
-                state: { bookingId: result.bookingId }
-              });
-              setTimeout(() => onClose(), 100);
+              window.location.replace(`/booking-success?booking_id=${result.bookingId}`);
             })
-            .catch((err: any) => {
-              setError('Payment successful but booking failed to save. Please contact support with payment ID: ' + response.razorpay_payment_id);
+            .catch(() => {
+              setError(
+                'Payment received but booking failed to save. Please contact support with payment ID: ' +
+                  response.razorpay_payment_id
+              );
               setIsProcessing(false);
             });
         },
@@ -129,27 +168,21 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
           email: user.email || '',
           contact: profile.phone || '',
         },
-        theme: {
-          color: '#2563eb',
-        },
+        theme: { color: '#2563eb' },
         modal: {
-          ondismiss: function() {
+          ondismiss: function () {
             setIsProcessing(false);
-          }
-        }
+          },
+        },
       };
 
       const rzp = new window.Razorpay(options);
-
       rzp.on('payment.failed', function (response: any) {
-        console.error('Payment failed:', response.error);
         setError(`Payment failed: ${response.error.description}`);
         setIsProcessing(false);
       });
-
       rzp.open();
     } catch (err: any) {
-      console.error('Payment error:', err);
       setError(err.message || 'Failed to initialize payment. Please try again.');
       setIsProcessing(false);
     }
@@ -207,7 +240,7 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
             ) : isProcessing ? (
               <>
                 <Loader2 size={20} className="animate-spin" />
-                <span>Opening Payment Gateway...</span>
+                <span>{processingLabel}</span>
               </>
             ) : (
               <span>Pay ₹{amount}</span>

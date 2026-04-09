@@ -107,27 +107,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(false);
 
       const { data } = supabase.auth.onAuthStateChange(
-        async (event, session) => {
-          console.log('[AuthContext] Auth state changed:', event, session?.user?.id || 'No user');
+        (_event, session) => {
           setUser(session?.user ?? null);
 
-          if (session?.user) {
-            let profileData = await fetchProfile(session.user.id);
+          (async () => {
+            if (session?.user) {
+              let profileData = await fetchProfile(session.user.id);
 
-            if (!profileData) {
-              console.log('[AuthContext] Profile not found on auth change, creating new profile');
-              profileData = await createProfile(
-                session.user.id,
-                session.user.email!,
-                session.user.user_metadata?.full_name,
-                session.user.user_metadata?.phone
-              );
+              if (!profileData) {
+                profileData = await createProfile(
+                  session.user.id,
+                  session.user.email!,
+                  session.user.user_metadata?.full_name,
+                  session.user.user_metadata?.phone
+                );
+              }
+
+              setProfile(profileData);
+            } else {
+              setProfile(null);
             }
-
-            setProfile(profileData);
-          } else {
-            setProfile(null);
-          }
+          })();
         }
       );
 
@@ -178,7 +178,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return { error };
   };
 
-  const signInWithPhone = async (phone: string, otp: string) => {
+  const signInWithPhone = async (_phone: string, _otp: string) => {
     return { error: new Error('Phone authentication not yet implemented') as AuthError };
   };
 

@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef } from 'react';
-import { useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useSearchParams, useLocation, Link } from 'react-router-dom';
 import { CheckCircle, Calendar, Clock, MapPin, IndianRupee, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -11,211 +11,42 @@ interface BookingDetails {
   address: string;
   price: number;
   tier: string;
-  created_at: string;
 }
 
 const BookingSuccess = () => {
   const [searchParams] = useSearchParams();
-  const locationState = useLocation();
-  const navigate = useNavigate();
+  const location = useLocation();
   const [booking, setBooking] = useState<BookingDetails | null>(null);
-  const [contentLoading, setContentLoading] = useState(true);
-  const isMountedRef = useRef(true);
-  const bookingId = (locationState.state as { bookingId?: string })?.bookingId || searchParams.get('booking_id');
+  const [loading, setLoading] = useState(true);
+
+  const bookingId =
+    (location.state as { bookingId?: string })?.bookingId ||
+    searchParams.get('booking_id');
 
   useEffect(() => {
-    isMountedRef.current = true;
-    console.log('[BookingSuccess] Component mounted, fetching booking...');
-    fetchBooking();
-
-    return () => {
-      console.log('[BookingSuccess] Component unmounting');
-      isMountedRef.current = false;
-    };
-  }, [bookingId]);
-
-  const fetchBooking = async (retryCount = 0, maxRetries = 5) => {
-    const delayMs = Math.min(1000 * Math.pow(1.5, retryCount), 5000);
-
-    console.log('[BookingSuccess] === FETCH BOOKING START ===');
-    console.log('[BookingSuccess] Retry attempt:', retryCount + 1, 'of', maxRetries + 1);
-    console.log('[BookingSuccess] Step 1: Booking ID from state/params:', bookingId);
-
-    if (!isMountedRef.current) {
-      console.log('[BookingSuccess] Component unmounted, aborting fetch');
-      return;
-    }
-
-    try {
-      console.log('[BookingSuccess] Step 2: Getting auth token from localStorage');
-      const authStorage = localStorage.getItem('homitra-auth-token');
-
-      if (!authStorage) {
-        console.error('[BookingSuccess] ✗ No auth token in localStorage');
-        navigate('/login');
-        return;
-      }
-
-      let accessToken: string | null = null;
-      let userId: string | null = null;
-
+    const load = async () => {
       try {
-        const parsed = JSON.parse(authStorage);
-        accessToken = parsed?.access_token || null;
-        userId = parsed?.user?.id || null;
-        console.log('[BookingSuccess] ✓ User ID from token:', userId);
-      } catch (e) {
-        console.error('[BookingSuccess] ✗ Failed to parse auth storage:', e);
-        navigate('/login');
-        return;
-      }
+        let query = supabase.from('bookings').select('id, service_name, date, time_slot, address, price, tier');
 
-      if (!accessToken || !userId) {
-        console.error('[BookingSuccess] ✗ Invalid auth data');
-        navigate('/login');
-        return;
-      }
-
-      if (!isMountedRef.current) {
-        console.log('[BookingSuccess] Component unmounted after auth check');
-        return;
-      }
-
-      let data, fetchError;
-
-      if (bookingId) {
-        console.log('[BookingSuccess] Step 3: Fetching specific booking:', bookingId);
-        console.log('[BookingSuccess] Query: bookings where id =', bookingId, 'AND user_id =', userId);
-
-        const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/bookings?id=eq.${bookingId}&user_id=eq.${userId}&select=*`;
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-        try {
-          const response = await fetch(url, {
-            headers: {
-              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-              'Authorization': `Bearer ${accessToken}`,
-            },
-            signal: controller.signal,
-          });
-
-          clearTimeout(timeoutId);
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error('[BookingSuccess] ✗ Fetch failed:', response.status, errorText);
-            fetchError = new Error(`Failed to fetch booking: ${response.status}`);
-            data = [];
-          } else {
-            data = await response.json();
-            console.log('[BookingSuccess] Query result:', { data: data, count: data?.length });
-          }
-        } catch (err: any) {
-          if (err.name === 'AbortError') {
-            console.error('[BookingSuccess] ✗ Request timeout');
-            fetchError = new Error('Request timeout');
-          } else {
-            throw err;
-          }
-          data = [];
-        }
-      } else {
-        console.log('[BookingSuccess] Step 3: No booking ID, fetching latest booking');
-        console.log('[BookingSuccess] Query: latest booking for user_id =', userId);
-
-        const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/bookings?user_id=eq.${userId}&select=*&order=created_at.desc&limit=1`;
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-        try {
-          const response = await fetch(url, {
-            headers: {
-              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-              'Authorization': `Bearer ${accessToken}`,
-            },
-            signal: controller.signal,
-          });
-
-          clearTimeout(timeoutId);
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error('[BookingSuccess] ✗ Fetch failed:', response.status, errorText);
-            fetchError = new Error(`Failed to fetch booking: ${response.status}`);
-            data = [];
-          } else {
-            data = await response.json();
-            console.log('[BookingSuccess] Query result:', { count: data?.length });
-          }
-        } catch (err: any) {
-          if (err.name === 'AbortError') {
-            console.error('[BookingSuccess] ✗ Request timeout');
-            fetchError = new Error('Request timeout');
-          } else {
-            throw err;
-          }
-          data = [];
-        }
-      }
-
-      if (!isMountedRef.current) {
-        console.log('[BookingSuccess] Component unmounted after query');
-        return;
-      }
-
-      if (fetchError) {
-        console.error('[BookingSuccess] ✗ Database error:', fetchError);
-        console.error('[BookingSuccess] Error code:', fetchError.code);
-        console.error('[BookingSuccess] Error message:', fetchError.message);
-        setContentLoading(false);
-      } else if (data && data.length > 0) {
-        console.log('[BookingSuccess] ✓ Booking loaded successfully!');
-        console.log('[BookingSuccess] Booking ID:', data[0].id);
-        console.log('[BookingSuccess] Service:', data[0].service_name);
-        console.log('[BookingSuccess] Status:', data[0].status);
-        setBooking(data[0]);
-        setContentLoading(false);
-      } else {
-        console.warn('[BookingSuccess] ⚠ No booking found in database (attempt', retryCount + 1, 'of', maxRetries + 1, ')');
-
-        if (retryCount < maxRetries) {
-          console.log('[BookingSuccess] Retrying in', delayMs, 'ms...');
-          setTimeout(() => {
-            if (isMountedRef.current) {
-              fetchBooking(retryCount + 1, maxRetries);
-            }
-          }, delayMs);
+        if (bookingId) {
+          query = query.eq('id', bookingId);
         } else {
-          console.error('[BookingSuccess] ✗ Max retries reached, booking not found');
-          setContentLoading(false);
+          query = query.order('created_at', { ascending: false }).limit(1);
         }
-      }
-    } catch (err: any) {
-      if (!isMountedRef.current) {
-        console.log('[BookingSuccess] Component unmounted during error');
-        return;
-      }
-      console.error('[BookingSuccess] ✗ Exception occurred:', err);
-      console.error('[BookingSuccess] Exception message:', err.message);
-      console.error('[BookingSuccess] Exception stack:', err.stack);
 
-      if (retryCount < maxRetries) {
-        console.log('[BookingSuccess] Retrying after exception in', delayMs, 'ms...');
-        setTimeout(() => {
-          if (isMountedRef.current) {
-            fetchBooking(retryCount + 1, maxRetries);
-          }
-        }, delayMs);
-      } else {
-        setContentLoading(false);
-      }
-    }
+        const { data, error } = await query;
 
-    console.log('[BookingSuccess] === FETCH BOOKING END ===');
-  };
+        if (!error && data && data.length > 0) {
+          setBooking(data[0]);
+        }
+      } catch {
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, [bookingId]);
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -227,7 +58,7 @@ const BookingSuccess = () => {
     });
   };
 
-  if (contentLoading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
