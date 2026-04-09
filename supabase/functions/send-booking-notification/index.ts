@@ -27,30 +27,36 @@ Deno.serve(async (req: Request) => {
 
   try {
     const { booking_id, user_id } = await req.json();
+    console.log(`[notification] booking_id=${booking_id} user_id=${user_id}`);
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { data: booking } = await supabase
+    const { data: booking, error: bookingError } = await supabase
       .from("bookings")
       .select("*")
       .eq("id", booking_id)
       .maybeSingle();
 
+    if (bookingError) console.error("[notification] booking fetch error:", bookingError);
+
     if (!booking) {
+      console.error("[notification] booking not found for id:", booking_id);
       return new Response(JSON.stringify({ success: true }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", user_id)
       .maybeSingle();
+
+    if (profileError) console.error("[notification] profile fetch error:", profileError);
 
     const customerName = profile?.full_name || "Customer";
     const customerEmail = profile?.email || "";
@@ -62,10 +68,14 @@ Deno.serve(async (req: Request) => {
     const address = booking.address || booking.location || "";
     const bookingRef = booking_id.slice(0, 8).toUpperCase();
 
+    console.log(`[notification] customer=${customerName} email=${customerEmail} phone=${customerPhone}`);
+
     const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
     const FAST2SMS_API_KEY = Deno.env.get("FAST2SMS_API_KEY");
     const ADMIN_EMAIL = Deno.env.get("ADMIN_EMAIL") || "homitra.services@gmail.com";
     const ADMIN_PHONE = normalizePhone(Deno.env.get("ADMIN_PHONE") || "9008935455");
+
+    console.log(`[notification] RESEND_API_KEY present=${!!RESEND_API_KEY} FAST2SMS_API_KEY present=${!!FAST2SMS_API_KEY}`);
 
     const tableRowStyle = `style="border-bottom:1px solid #e5e7eb"`;
     const altRowStyle = `style="border-bottom:1px solid #e5e7eb;background:#f9fafb"`;
@@ -97,19 +107,25 @@ Deno.serve(async (req: Request) => {
         </div>
       `;
 
-      await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${RESEND_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: "Homitra Bookings <bookings@homitra.co.in>",
-          to: [ADMIN_EMAIL],
-          subject: `New Booking Received - ${serviceName} | #${bookingRef}`,
-          html: adminEmailHtml,
-        }),
-      }).catch(console.error);
+      try {
+        const adminEmailRes = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${RESEND_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            from: "Homitra Bookings <bookings@homitra.co.in>",
+            to: [ADMIN_EMAIL],
+            subject: `New Booking Received - ${serviceName} | #${bookingRef}`,
+            html: adminEmailHtml,
+          }),
+        });
+        const adminEmailBody = await adminEmailRes.text();
+        console.log(`[notification] admin email status=${adminEmailRes.status} body=${adminEmailBody}`);
+      } catch (e) {
+        console.error("[notification] admin email error:", e);
+      }
 
       if (customerEmail) {
         const customerEmailHtml = `
@@ -133,39 +149,65 @@ Deno.serve(async (req: Request) => {
           </div>
         `;
 
-        await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${RESEND_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            from: "Homitra Bookings <bookings@homitra.co.in>",
-            to: [customerEmail],
-            subject: `Booking Confirmed - ${serviceName}`,
-            html: customerEmailHtml,
-          }),
-        }).catch(console.error);
+        try {
+          const customerEmailRes = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${RESEND_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              from: "Homitra Bookings <bookings@homitra.co.in>",
+              to: [customerEmail],
+              subject: `Booking Confirmed - ${serviceName}`,
+              html: customerEmailHtml,
+            }),
+          });
+          const customerEmailBody = await customerEmailRes.text();
+          console.log(`[notification] customer email status=${customerEmailRes.status} body=${customerEmailBody}`);
+        } catch (e) {
+          console.error("[notification] customer email error:", e);
+        }
+      } else {
+        console.warn("[notification] no customer email, skipping customer email");
       }
+    } else {
+      console.error("[notification] RESEND_API_KEY not set");
     }
 
     if (FAST2SMS_API_KEY) {
       const adminSms = `New Booking: ${serviceName} | Rs.${price} | ${bookingDate} ${timeSlot} | ${customerName} ${customerPhone || ""}`.slice(0, 160);
 
-      await fetch(
-        `https://www.fast2sms.com/dev/bulkV2?authorization=${FAST2SMS_API_KEY}&route=q&numbers=${ADMIN_PHONE}&message=${encodeURIComponent(adminSms)}&flash=0`,
-        { method: "GET" }
-      ).catch(console.error);
+      try {
+        const adminSmsRes = await fetch(
+          `https://www.fast2sms.com/dev/bulkV2?authorization=${FAST2SMS_API_KEY}&route=q&numbers=${ADMIN_PHONE}&message=${encodeURIComponent(adminSms)}&flash=0`,
+          { method: "GET" }
+        );
+        const adminSmsBody = await adminSmsRes.text();
+        console.log(`[notification] admin SMS status=${adminSmsRes.status} body=${adminSmsBody}`);
+      } catch (e) {
+        console.error("[notification] admin SMS error:", e);
+      }
 
       if (customerPhone && customerPhone.length === 10) {
         const firstName = customerName.split(" ")[0];
         const customerSms = `Hi ${firstName}, your ${serviceName} booking with Homitra is confirmed for ${bookingDate} at ${timeSlot}. Our team will contact you shortly. - Team Homitra`.slice(0, 160);
 
-        await fetch(
-          `https://www.fast2sms.com/dev/bulkV2?authorization=${FAST2SMS_API_KEY}&route=q&numbers=${customerPhone}&message=${encodeURIComponent(customerSms)}&flash=0`,
-          { method: "GET" }
-        ).catch(console.error);
+        try {
+          const customerSmsRes = await fetch(
+            `https://www.fast2sms.com/dev/bulkV2?authorization=${FAST2SMS_API_KEY}&route=q&numbers=${customerPhone}&message=${encodeURIComponent(customerSms)}&flash=0`,
+            { method: "GET" }
+          );
+          const customerSmsBody = await customerSmsRes.text();
+          console.log(`[notification] customer SMS status=${customerSmsRes.status} body=${customerSmsBody}`);
+        } catch (e) {
+          console.error("[notification] customer SMS error:", e);
+        }
+      } else {
+        console.warn(`[notification] invalid/missing customer phone: ${customerPhone}, skipping SMS`);
       }
+    } else {
+      console.error("[notification] FAST2SMS_API_KEY not set");
     }
 
     return new Response(JSON.stringify({ success: true }), {
@@ -173,7 +215,7 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Notification error:", error);
+    console.error("[notification] unhandled error:", error);
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
