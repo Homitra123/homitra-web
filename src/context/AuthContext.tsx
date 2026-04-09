@@ -6,7 +6,7 @@ interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: AuthError | null }>;
+  signUp: (email: string, password: string, fullName: string, phone: string) => Promise<{ error: AuthError | null }>;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signInWithGoogle: () => Promise<{ error: AuthError | null }>;
   signInWithPhone: (phone: string, otp: string) => Promise<{ error: AuthError | null }>;
@@ -45,7 +45,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return data;
   };
 
-  const createProfile = async (userId: string, email: string, fullName?: string) => {
+  const createProfile = async (userId: string, email: string, fullName?: string, phone?: string) => {
     console.log('[AuthContext] Creating new profile for user:', userId);
 
     const { data, error } = await supabase
@@ -54,7 +54,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         id: userId,
         email: email,
         full_name: fullName || null,
-        phone: null,
+        phone: phone || null,
       })
       .select()
       .single();
@@ -93,7 +93,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           profileData = await createProfile(
             session.user.id,
             session.user.email!,
-            session.user.user_metadata?.full_name
+            session.user.user_metadata?.full_name,
+            session.user.user_metadata?.phone
           );
         } else {
           console.log('[AuthContext] Profile loaded:', profileData.id);
@@ -118,7 +119,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               profileData = await createProfile(
                 session.user.id,
                 session.user.email!,
-                session.user.user_metadata?.full_name
+                session.user.user_metadata?.full_name,
+                session.user.user_metadata?.phone
               );
             }
 
@@ -141,13 +143,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  const signUp = async (email: string, password: string, fullName: string) => {
+  const signUp = async (email: string, password: string, fullName: string, phone: string) => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
           full_name: fullName,
+          phone: phone,
         },
       },
     });

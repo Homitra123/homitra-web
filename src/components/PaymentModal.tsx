@@ -214,6 +214,15 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
               console.log('✓ Booking ID:', result.bookingId);
               console.log('✓ Starting navigation sequence...');
 
+              fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-booking-notification`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ booking_id: result.bookingId, user_id: user!.id }),
+              }).catch(() => {});
+
               setIsProcessing(false);
 
               console.log('✓ NAVIGATING NOW to /booking-success with ID:', result.bookingId);

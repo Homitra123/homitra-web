@@ -16,6 +16,7 @@ const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [signUpPhone, setSignUpPhone] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -38,13 +39,18 @@ const Login = () => {
           setLoading(false);
           return;
         }
+        if (!signUpPhone || signUpPhone.length !== 10) {
+          setError('Please enter a valid 10-digit phone number');
+          setLoading(false);
+          return;
+        }
         if (password.length < 6) {
           setError('Password must be at least 6 characters');
           setLoading(false);
           return;
         }
 
-        const { error: signUpError } = await signUp(email, password, fullName);
+        const { error: signUpError } = await signUp(email, password, fullName, signUpPhone);
 
         if (signUpError) {
           setError(signUpError.message);
@@ -286,22 +292,41 @@ const Login = () => {
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
             {isSignUp && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Full Name
-                </label>
-                <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <input
-                    type="text"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter your full name"
-                    required={isSignUp}
-                  />
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Full Name
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <input
+                      type="text"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Enter your full name"
+                      required={isSignUp}
+                    />
+                  </div>
                 </div>
-              </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Phone Number
+                  </label>
+                  <div className="relative">
+                    <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <input
+                      type="tel"
+                      value={signUpPhone}
+                      onChange={(e) => setSignUpPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                      className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Enter 10-digit phone number"
+                      required={isSignUp}
+                    />
+                  </div>
+                </div>
+              </>
             )}
 
             <div>
@@ -429,6 +454,7 @@ const Login = () => {
                   type="button"
                   onClick={() => {
                     setIsSignUp(!isSignUp);
+                    setSignUpPhone('');
                     setError('');
                   }}
                   className="text-blue-600 hover:text-blue-700 font-medium text-sm"
