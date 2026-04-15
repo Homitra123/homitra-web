@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { ArrowLeft, Calendar, MapPin, Check, Plus, X } from 'lucide-react';
 import { services } from '../data/mockData';
 import { BANGALORE_LOCATIONS, DURATIONS, TIME_PERIODS, TIME_SLOTS } from '../types';
+import { isTimeSlotDisabled } from '../lib/timeUtils';
+import DatePickerInput from '../components/DatePickerInput';
 
 interface ScheduledBooking {
   id: string;
@@ -384,12 +386,17 @@ const ServiceBooking = () => {
                 <Calendar size={18} className="text-blue-600" />
                 <span>Select Date</span>
               </label>
-              <input
-                type="date"
-                {...register('date', { required: !isMultipleBooking })}
-                min={getMinDate()}
-                max={getMaxDate()}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              <input type="hidden" {...register('date', { required: !isMultipleBooking })} />
+              <DatePickerInput
+                value={watchedDate ?? ''}
+                onChange={(d) => {
+                  setValue('date', d, { shouldValidate: true });
+                  setValue('timeSlot', '');
+                  setValue('timePeriod', '');
+                  setSelectedTimePeriod('');
+                }}
+                minDate={getMinDate()}
+                maxDate={getMaxDate()}
               />
               {errors.date && !isMultipleBooking && (
                 <p className="mt-1 text-sm text-red-600">{errors.date.message}</p>
@@ -453,20 +460,26 @@ const ServiceBooking = () => {
 
               {selectedTimePeriod && (
                 <div className="grid grid-cols-4 gap-2.5">
-                  {TIME_SLOTS[selectedTimePeriod as keyof typeof TIME_SLOTS].map((slot) => (
-                    <button
-                      key={slot}
-                      type="button"
-                      onClick={() => setValue('timeSlot', slot)}
-                      className={`py-3 px-3 rounded-xl text-sm font-semibold transition-all ${
-                        watch('timeSlot') === slot
-                          ? 'bg-orange-500 text-white shadow-md'
-                          : 'bg-orange-50 text-gray-800 hover:bg-orange-100'
-                      }`}
-                    >
-                      {slot}
-                    </button>
-                  ))}
+                  {TIME_SLOTS[selectedTimePeriod as keyof typeof TIME_SLOTS].map((slot) => {
+                    const disabled = isTimeSlotDisabled(slot, watchedDate);
+                    return (
+                      <button
+                        key={slot}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => !disabled && setValue('timeSlot', slot)}
+                        className={`py-3 px-3 rounded-xl text-sm font-semibold transition-all ${
+                          disabled
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : watch('timeSlot') === slot
+                            ? 'bg-orange-500 text-white shadow-md'
+                            : 'bg-orange-50 text-gray-800 hover:bg-orange-100'
+                        }`}
+                      >
+                        {slot}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 

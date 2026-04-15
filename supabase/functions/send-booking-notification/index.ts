@@ -31,6 +31,74 @@ async function dbQuery(url: string, key: string, table: string, filter: string) 
   return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
 }
 
+function buildCustomizationRows(details: Record<string, unknown>, tr: string, trAlt: string, td1: string, td2: string): string {
+  if (!details || typeof details !== "object") return "";
+
+  const rows: string[] = [];
+  const plan = details.plan as string;
+
+  const row = (label: string, value: unknown, alt: boolean) => {
+    if (!value && value !== 0) return "";
+    return `<tr ${alt ? trAlt : tr}><td ${td1}>${label}</td><td ${td2}>${value}</td></tr>`;
+  };
+
+  const people = details.people as number;
+  if (people) rows.push(row("No. of People", people, false));
+
+  if (plan === "veg") {
+    rows.push(row("Roti Type", details.rotiType, true));
+    rows.push(row("Vegetable Dish", details.vegetable, false));
+    if (details.addExtraVeg) rows.push(row("Extra Veg Dish", details.addExtraVeg, true));
+    if ((details.extraRotisCount as number) > 0) rows.push(row("Extra Rotis", details.extraRotisCount, false));
+    if (details.specialRequest) rows.push(row("Special Request", details.specialRequest, true));
+  }
+
+  if (plan === "nonveg") {
+    rows.push(row("Roti Type", details.rotiType, true));
+    rows.push(row("Non-Veg Dish", details.nonVegItem, false));
+    if (details.addExtraNonVeg) rows.push(row("Extra Non-Veg Dish", details.addExtraNonVeg, true));
+    if (details.addDal) rows.push(row("Dal Add-On", details.addDal, false));
+    if ((details.extraRotisCount as number) > 0) rows.push(row("Extra Rotis", details.extraRotisCount, true));
+    if (details.specialRequest) rows.push(row("Special Request", details.specialRequest, false));
+  }
+
+  if (plan === "bites") {
+    const dishType = details.dishType as string;
+    if (dishType === "custom") {
+      rows.push(row("Custom Dish", details.customDish, true));
+    } else if (dishType === "curated") {
+      rows.push(row("Curated Dish", details.selectedCuratedDish, true));
+    } else if (dishType === "streetfood") {
+      rows.push(row("Street Food", details.selectedStreetFood, true));
+    }
+    const extras = [...(details.extraCuratedItems as string[] || []), ...(details.extraStreetFoodItems as string[] || [])];
+    if (extras.length > 0) rows.push(row("Extra Items", extras.join(", "), false));
+    rows.push(row("Beverage", details.beverage, true));
+  }
+
+  if (plan === "monthly") {
+    const freqMap: Record<string, string> = {
+      "1meal": "1 Meal / Day",
+      "2meals": "2 Meals / Day",
+      "breakfast2meals": "Breakfast + 2 Meals",
+    };
+    rows.push(row("Meal Frequency", freqMap[details.mealFrequency as string] || details.mealFrequency, true));
+    rows.push(row("Months Subscribed", details.upfrontMonths, false));
+    if (details.addNonVeg) rows.push(row("Non-Veg Add-On", details.nonVegFrequency || "Yes", true));
+  }
+
+  const filtered = rows.filter(Boolean);
+  if (filtered.length === 0) return "";
+
+  return `
+    <p style="color:#111827;font-weight:600;font-size:13px;margin:20px 0 4px;letter-spacing:0.04em">Meal Customisation</p>
+    <div style="border-top:2px solid #1e40af;margin-bottom:0"></div>
+    <table style="border-collapse:collapse;width:100%;margin-bottom:20px">
+      ${filtered.join("\n")}
+    </table>
+  `;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -63,6 +131,7 @@ Deno.serve(async (req: Request) => {
     const price = booking.price;
     const address = booking.address || booking.location || "";
     const bookingRef = booking_id.slice(0, 8).toUpperCase();
+    const customizationDetails = booking.customization_details || null;
 
     console.log(`[notification] customer=${customerName} email=${customerEmail} phone=${customerPhone}`);
 
@@ -73,13 +142,15 @@ Deno.serve(async (req: Request) => {
 
     console.log(`[notification] RESEND_API_KEY present=${!!RESEND_API_KEY} FAST2SMS_API_KEY present=${!!FAST2SMS_API_KEY}`);
 
-    // Admin Email Only
     if (RESEND_API_KEY) {
       const tr = `style="border-bottom:1px solid #e5e7eb"`;
       const trAlt = `style="border-bottom:1px solid #e5e7eb;background:#f9fafb"`;
       const td1 = `style="padding:10px 14px;color:#6b7280;width:42%;font-size:14px"`;
       const td2 = `style="padding:10px 14px;font-weight:600;font-size:14px;color:#111827"`;
-      const sectionHeader = `style="padding:8px 14px;font-size:12px;color:#9ca3af;font-weight:600;letter-spacing:0.05em;border-bottom:1px solid #e5e7eb;background:#f9fafb"`;
+
+      const customizationHtml = customizationDetails
+        ? buildCustomizationRows(customizationDetails, tr, trAlt, td1, td2)
+        : "";
 
       const adminHtml = `<div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#ffffff">
         <div style="background:#1e40af;padding:24px 28px">
@@ -97,6 +168,7 @@ Deno.serve(async (req: Request) => {
             <tr ${trAlt}><td ${td1}>Time Slot</td><td ${td2}>${timeSlot}</td></tr>
             <tr ${tr}><td ${td1}>Address</td><td ${td2}>${address}</td></tr>
           </table>
+          ${customizationHtml}
           <p style="color:#111827;font-weight:600;font-size:13px;margin:0 0 4px;letter-spacing:0.04em">Customer Details</p>
           <div style="border-top:2px solid #1e40af;margin-bottom:0"></div>
           <table style="border-collapse:collapse;width:100%;margin-bottom:20px">
@@ -128,7 +200,6 @@ Deno.serve(async (req: Request) => {
       console.error("[notification] RESEND_API_KEY not set");
     }
 
-    // SMS to Customer only
     if (FAST2SMS_API_KEY) {
       if (customerPhone && customerPhone.length === 10) {
         const firstName = customerName.split(" ")[0];

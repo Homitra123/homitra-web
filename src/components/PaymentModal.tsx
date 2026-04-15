@@ -62,6 +62,7 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
       visits: bookingData.visits || 1,
       status: 'confirmed',
       payment_id: razorpayPaymentId,
+      customization_details: bookingData.customizerDetails || null,
     };
 
     const token = accessTokenRef.current;
