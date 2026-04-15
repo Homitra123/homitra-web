@@ -15,12 +15,24 @@ const Header = () => {
   ];
 
   return (
+    <>
+      <header className="md:hidden bg-white border-b border-gray-100 sticky top-0 z-50 shadow-sm">
+        <div className="px-4 py-3 flex items-center justify-center">
+          <Link to="/">
+            <img
+              src="/Logo.png"
+              alt="Homitra - Trusted Home Services"
+              className="h-10 w-auto object-contain"
+            />
+          </Link>
+        </div>
+      </header>
     <header className="hidden md:block bg-white border-b border-gray-200 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
           <Link to="/" className="flex items-center">
             <img
-              src="/image.png"
+              src="/Logo.png"
               alt="Homitra - Trusted Home Services"
               className="h-14 w-auto object-contain"
             />
@@ -72,6 +84,7 @@ const Header = () => {
         </div>
       </div>
     </header>
+    </>
   );
 };
 

@@ -73,26 +73,26 @@ const VegCustomizer = ({ onChange }: VegCustomizerProps) => {
       </div>
 
       <div className="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-200">
-        <div className="flex items-center gap-4 px-4 py-3 bg-orange-50/50">
-          <div className="w-24 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide">Roti Type</div>
-          <div className="text-sm text-gray-600">Can choose from Fulka / Paratha / Puri</div>
+        <div className="flex items-start gap-3 px-4 py-3 bg-orange-50/50">
+          <div className="w-20 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide pt-0.5">Roti Type</div>
+          <div className="text-sm text-gray-600 min-w-0">Can choose from Fulka / Paratha / Puri</div>
         </div>
-        <div className="flex items-center gap-4 px-4 py-3 bg-orange-50/30">
-          <div className="w-24 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide">Dal</div>
-          <div className="text-sm text-gray-600">Can choose anyone from Dal Fry / Tadka / Sambhar / Plain</div>
+        <div className="flex items-start gap-3 px-4 py-3 bg-orange-50/30">
+          <div className="w-20 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide pt-0.5">Dal</div>
+          <div className="text-sm text-gray-600 min-w-0">Can choose from Dal Fry / Tadka / Sambhar / Plain</div>
         </div>
-        <div className="flex items-center gap-4 px-4 py-3 bg-orange-50/50">
-          <div className="w-24 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide">Rice</div>
-          <div className="text-sm text-gray-600">Can choose anyone from Jeera / Lemon / Tomato / Pulav / Plain</div>
+        <div className="flex items-start gap-3 px-4 py-3 bg-orange-50/50">
+          <div className="w-20 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide pt-0.5">Rice</div>
+          <div className="text-sm text-gray-600 min-w-0">Can choose from Jeera / Lemon / Tomato / Pulav / Plain</div>
         </div>
-        <div className="flex items-center gap-4 px-4 py-3 bg-white">
-          <div className="w-24 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide">
+        <div className="px-4 py-3 bg-white">
+          <div className="text-[11px] font-semibold text-orange-700 uppercase tracking-wide mb-2">
             Vegetable <span className="text-red-500">*</span>
           </div>
           <select
             value={state.vegetable}
             onChange={e => update({ vegetable: e.target.value, addExtraVeg: '' })}
-            className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-400"
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2.5 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-400 appearance-auto"
           >
             <option value="">Select vegetable...</option>
             {VEG_OPTIONS.vegetables.map(v => (

@@ -146,25 +146,25 @@ const MonthlyCustomizer = ({ onChange }: MonthlyCustomizerProps) => {
       <div>
         <h4 className="text-sm font-semibold text-gray-800 mb-3">What's Included</h4>
         <div className="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-200">
-          <div className="flex items-center gap-4 px-4 py-3 bg-orange-50/50">
-            <div className="w-28 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide">Roti Type</div>
-            <div className="text-sm text-gray-600">Can choose from Fulka / Paratha / Puri</div>
+          <div className="flex items-start gap-3 px-4 py-3 bg-orange-50/50">
+            <div className="w-24 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide pt-0.5">Roti Type</div>
+            <div className="text-sm text-gray-600 min-w-0">Can choose from Fulka / Paratha / Puri</div>
           </div>
-          <div className="flex items-center gap-4 px-4 py-3 bg-orange-50/30">
-            <div className="w-28 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide">Dal</div>
-            <div className="text-sm text-gray-600">Can choose from Dal Fry / Tadka / Sambhar / Plain</div>
+          <div className="flex items-start gap-3 px-4 py-3 bg-orange-50/30">
+            <div className="w-24 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide pt-0.5">Dal</div>
+            <div className="text-sm text-gray-600 min-w-0">Can choose from Dal Fry / Tadka / Sambhar / Plain</div>
           </div>
-          <div className="flex items-center gap-4 px-4 py-3 bg-orange-50/50">
-            <div className="w-28 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide">Rice</div>
-            <div className="text-sm text-gray-600">Can choose from Jeera / Lemon / Tomato / Pulav / Plain</div>
+          <div className="flex items-start gap-3 px-4 py-3 bg-orange-50/50">
+            <div className="w-24 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide pt-0.5">Rice</div>
+            <div className="text-sm text-gray-600 min-w-0">Can choose from Jeera / Lemon / Tomato / Pulav / Plain</div>
           </div>
-          <div className="flex items-center gap-4 px-4 py-3 bg-orange-50/30">
-            <div className="w-28 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide">Non-Veg Dishes</div>
-            <div className="text-sm text-gray-600">Can choose from Chicken / Mutton / Fish / Egg</div>
+          <div className="flex items-start gap-3 px-4 py-3 bg-orange-50/30">
+            <div className="w-24 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide pt-0.5">Non-Veg</div>
+            <div className="text-sm text-gray-600 min-w-0">Can choose from Chicken / Mutton / Fish / Egg</div>
           </div>
-          <div className="flex items-center gap-4 px-4 py-3 bg-orange-50/50">
-            <div className="w-28 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide">Fresh Salad</div>
-            <div className="text-sm text-gray-600">Can choose from Green Veggie Salad / Peanut Salad</div>
+          <div className="flex items-start gap-3 px-4 py-3 bg-orange-50/50">
+            <div className="w-24 flex-shrink-0 text-[11px] font-semibold text-orange-700 uppercase tracking-wide pt-0.5">Fresh Salad</div>
+            <div className="text-sm text-gray-600 min-w-0">Can choose from Green Veggie Salad / Peanut Salad</div>
           </div>
         </div>
 

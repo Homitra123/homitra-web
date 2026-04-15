@@ -461,15 +461,15 @@ const CookingBooking = () => {
                 <div className="grid grid-cols-3 border-b border-gray-200">
                   {(
                     [
-                      { mode: 'single', label: 'Single Booking' },
-                      { mode: 'custom', label: 'Weekly Routine Booking' },
-                      { mode: 'flexible', label: 'Multiple Day / Custom Days Booking' },
+                      { mode: 'single', label: 'Single Day' },
+                      { mode: 'custom', label: 'Weekly Routine' },
+                      { mode: 'flexible', label: 'Custom Days' },
                     ] as { mode: BookingMode; label: string }[]
                   ).map(({ mode, label }, i) => (
                     <button
                       key={mode}
                       onClick={() => handleModeChange(mode)}
-                      className={`flex flex-col items-center py-3 px-2 font-medium transition-all duration-200 text-xs ${
+                      className={`flex flex-col items-center py-3 px-1 font-medium transition-all duration-200 text-xs leading-tight text-center ${
                         i === 1 ? 'border-x border-gray-200' : ''
                       } ${
                         bookingMode === mode
@@ -477,7 +477,7 @@ const CookingBooking = () => {
                           : 'text-gray-600 hover:bg-orange-50'
                       }`}
                     >
-                      <CalendarIcon size={16} className="mb-0.5" />
+                      <CalendarIcon size={16} className="mb-1 flex-shrink-0" />
                       {label}
                     </button>
                   ))}
@@ -822,19 +822,19 @@ const CookingBooking = () => {
       </div>
 
       {selectedPlan && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-xl z-50">
+        <div className="fixed bottom-16 md:bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-xl z-50">
           <div className="max-w-4xl mx-auto px-4 md:px-6">
             <button
               onClick={() => setShowPriceBreakdown(!showPriceBreakdown)}
               className="w-full flex items-center justify-between py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
             >
-              <div className="flex items-center gap-2">
-                <Clock size={15} className="text-orange-500" />
-                <span className="font-medium">
+              <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
+                <Clock size={15} className="text-orange-500 flex-shrink-0" />
+                <span className="font-medium truncate">
                   {customizerSummary || 'Configure your meal above'}
                 </span>
               </div>
-              {showPriceBreakdown ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+              {showPriceBreakdown ? <ChevronDown size={16} className="flex-shrink-0" /> : <ChevronUp size={16} className="flex-shrink-0" />}
             </button>
 
             {showPriceBreakdown && customizerPrice > 0 && (

@@ -12,6 +12,7 @@ import Checkout from './pages/Checkout';
 import Bookings from './pages/Bookings';
 import Profile from './pages/Profile';
 import BookingSuccess from './pages/BookingSuccess';
+import ResetPassword from './pages/ResetPassword';
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
           <Router>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route
               path="/"
               element={

@@ -135,7 +135,7 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
         currency: 'INR',
         name: 'Homitra',
         description: bookingData.serviceName,
-        image: '/Home_Assiatnt_Pic.png',
+        image: '/Logo.png',
         handler: function (response: any) {
           setProcessingLabel('Saving your booking...');
 

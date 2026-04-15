@@ -58,7 +58,7 @@ export const services: Service[] = [
     description: 'Professional car cleaning and detailing service at your doorstep',
     icon: 'Car',
     basePrice: 149,
-    image: 'https://images.pexels.com/photos/13065690/pexels-photo-13065690.jpeg?auto=compress&cs=tinysrgb&w=1200',
+    image: '/Car_Cleaning_service_image.png',
     pricingTiers: [
       {
         id: 'express-exterior',

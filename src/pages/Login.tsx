@@ -3,16 +3,14 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Mail, Lock, User, Eye, EyeOff, Smartphone, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
-type AuthMethod = 'email' | 'phone';
-type PhoneStep = 'enter-phone' | 'verify-otp';
+type View = 'sign-in' | 'sign-up' | 'forgot-password' | 'forgot-sent';
 
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signIn, signUp, signInWithGoogle, signInWithPhone } = useAuth();
+  const { signIn, signUp, resetPassword } = useAuth();
 
-  const [authMethod, setAuthMethod] = useState<AuthMethod>('email');
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [view, setView] = useState<View>('sign-in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -21,450 +19,372 @@ const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const [phoneStep, setPhoneStep] = useState<PhoneStep>('enter-phone');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
-
   const from = (location.state as any)?.from?.pathname || '/';
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    try {
-      if (isSignUp) {
-        if (!fullName.trim()) {
-          setError('Please enter your full name');
-          setLoading(false);
-          return;
-        }
-        if (!signUpPhone || signUpPhone.length !== 10) {
-          setError('Please enter a valid 10-digit phone number');
-          setLoading(false);
-          return;
-        }
-        if (password.length < 6) {
-          setError('Password must be at least 6 characters');
-          setLoading(false);
-          return;
-        }
+    const { error: signInError } = await signIn(email, password);
 
-        const { error: signUpError } = await signUp(email, password, fullName, signUpPhone);
-
-        if (signUpError) {
-          setError(signUpError.message);
-        } else {
-          navigate(from, { replace: true });
-        }
+    if (signInError) {
+      if (
+        signInError.message.toLowerCase().includes('invalid login credentials') ||
+        signInError.message.toLowerCase().includes('invalid credentials')
+      ) {
+        setError(
+          'No account found with this email, or the password is incorrect. Please check your details or sign up.'
+        );
       } else {
-        const { error: signInError } = await signIn(email, password);
-
-        if (signInError) {
-          setError(signInError.message);
-        } else {
-          navigate(from, { replace: true });
-        }
-      }
-    } catch (err) {
-      setError('An unexpected error occurred');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    setError('');
-    setLoading(true);
-
-    const { error: googleError } = await signInWithGoogle();
-
-    if (googleError) {
-      setError(googleError.message);
-      setLoading(false);
-    }
-  };
-
-  const handlePhoneSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    if (!phoneNumber || phoneNumber.length !== 10) {
-      setError('Please enter a valid 10-digit phone number');
-      setLoading(false);
-      return;
-    }
-
-    setPhoneStep('verify-otp');
-    setLoading(false);
-  };
-
-  const handleOtpChange = (index: number, value: string) => {
-    if (value.length > 1) {
-      value = value[0];
-    }
-
-    if (!/^\d*$/.test(value)) {
-      return;
-    }
-
-    const newOtp = [...otp];
-    newOtp[index] = value;
-    setOtp(newOtp);
-
-    if (value && index < 5) {
-      const nextInput = document.getElementById(`otp-${index + 1}`);
-      nextInput?.focus();
-    }
-  };
-
-  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !otp[index] && index > 0) {
-      const prevInput = document.getElementById(`otp-${index - 1}`);
-      prevInput?.focus();
-    }
-  };
-
-  const handleOtpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    const otpValue = otp.join('');
-    if (otpValue.length !== 6) {
-      setError('Please enter the complete 6-digit OTP');
-      setLoading(false);
-      return;
-    }
-
-    if (phoneNumber === '9999999999' && otpValue === '123456') {
-      const { error: phoneError } = await signInWithPhone(phoneNumber, otpValue);
-
-      if (phoneError) {
-        setError(phoneError.message);
-      } else {
-        navigate(from, { replace: true });
+        setError(signInError.message);
       }
     } else {
-      setError('Invalid OTP. For testing, use phone 9999999999 with OTP 123456');
+      navigate(from, { replace: true });
     }
 
     setLoading(false);
   };
 
-  const resetPhoneAuth = () => {
-    setPhoneStep('enter-phone');
-    setPhoneNumber('');
-    setOtp(['', '', '', '', '', '']);
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError('');
+
+    if (!fullName.trim()) {
+      setError('Please enter your full name');
+      return;
+    }
+    if (!signUpPhone || signUpPhone.length !== 10) {
+      setError('Please enter a valid 10-digit phone number');
+      return;
+    }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    setLoading(true);
+
+    const { error: signUpError } = await signUp(email, password, fullName, signUpPhone);
+
+    if (signUpError) {
+      if (signUpError.message.toLowerCase().includes('already registered')) {
+        setError('This email is already registered. Please sign in instead.');
+      } else {
+        setError(signUpError.message);
+      }
+    } else {
+      navigate(from, { replace: true });
+    }
+
+    setLoading(false);
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    const { error: resetError } = await resetPassword(email);
+
+    if (resetError) {
+      setError(resetError.message);
+    } else {
+      setView('forgot-sent');
+    }
+
+    setLoading(false);
+  };
+
+  const switchView = (v: View) => {
+    setView(v);
+    setError('');
+    setPassword('');
+  };
+
+  const subtitles: Record<View, string> = {
+    'sign-in': '',
+    'sign-up': 'Create your account',
+    'forgot-password': 'Reset your password',
+    'forgot-sent': 'Check your email',
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-orange-50 flex items-center justify-center px-4 py-8">
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <img src="/Home_Assiatnt_Pic.png" alt="Homitra" className="h-12 w-12" />
-            <h1 className="text-3xl font-bold text-gray-900">homitra</h1>
+          <div className="flex items-center justify-center mb-4">
+            <img
+              src="/Logo.png"
+              alt="Homitra - Trusted Home Services"
+              className="h-16 w-auto object-contain"
+            />
           </div>
-          <p className="text-gray-600">
-            {authMethod === 'phone'
-              ? phoneStep === 'verify-otp'
-                ? 'Enter verification code'
-                : 'Sign in with phone'
-              : isSignUp
-                ? 'Create your account'
-                : 'Welcome back'}
-          </p>
+          {subtitles[view] && (
+            <p className="text-gray-600">{subtitles[view]}</p>
+          )}
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
-          {authMethod === 'phone' ? (
-            phoneStep === 'enter-phone' ? (
-              <form onSubmit={handlePhoneSubmit} className="space-y-5">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Phone Number
-                  </label>
-                  <div className="relative">
-                    <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                    <input
-                      type="tel"
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                      className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter 10-digit phone number"
-                      required
-                    />
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    We'll send you a one-time password to verify your number
-                  </p>
-                </div>
+        <div className="bg-white rounded-2xl shadow-xl p-8 border-2 border-gray-300">
 
-                {error && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-                    {error}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? 'Please wait...' : 'Send OTP'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMethod('email');
-                    setError('');
-                  }}
-                  className="w-full text-blue-600 hover:text-blue-700 font-medium text-sm py-2"
-                >
-                  Use Email Instead
-                </button>
-              </form>
-            ) : (
-              <form onSubmit={handleOtpSubmit} className="space-y-5">
-                <button
-                  type="button"
-                  onClick={resetPhoneAuth}
-                  className="flex items-center gap-2 text-gray-600 hover:text-gray-900 text-sm mb-4"
-                >
-                  <ArrowLeft size={16} />
-                  Change phone number
-                </button>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Verification Code
-                  </label>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Enter the 6-digit code sent to +91 {phoneNumber}
-                  </p>
-                  <div className="flex gap-2 justify-between">
-                    {otp.map((digit, index) => (
-                      <input
-                        key={index}
-                        id={`otp-${index}`}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={1}
-                        value={digit}
-                        onChange={(e) => handleOtpChange(index, e.target.value)}
-                        onKeyDown={(e) => handleOtpKeyDown(index, e)}
-                        className="w-12 h-14 text-center text-xl font-semibold border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                {error && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-                    {error}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? 'Verifying...' : 'Verify OTP'}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOtp(['', '', '', '', '', '']);
-                    setError('');
-                  }}
-                  className="w-full text-blue-600 hover:text-blue-700 font-medium text-sm py-2"
-                >
-                  Resend OTP
-                </button>
-              </form>
-            )
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-5">
-            {isSignUp && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Full Name
-                  </label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                    <input
-                      type="text"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter your full name"
-                      required={isSignUp}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Phone Number
-                  </label>
-                  <div className="relative">
-                    <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                    <input
-                      type="tel"
-                      value={signUpPhone}
-                      onChange={(e) => setSignUpPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                      className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter 10-digit phone number"
-                      required={isSignUp}
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter your email"
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-11 pr-11 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter your password"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-5 w-5" />
-                  ) : (
-                    <Eye className="h-5 w-5" />
-                  )}
-                </button>
-              </div>
-              {isSignUp && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Password must be at least 6 characters
-                </p>
-              )}
-            </div>
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-                {error}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Please wait...' : isSignUp ? 'Sign Up' : 'Sign In'}
-            </button>
-          </form>
-          )}
-
-          {authMethod === 'email' && (
-            <>
-              <div className="mt-6">
+          {view === 'sign-in' && (
+            <form onSubmit={handleSignIn} className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
                 <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-300"></div>
-                  </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="px-2 bg-white text-gray-500">Or continue with</span>
-                  </div>
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-transparent"
+                    placeholder="Enter your email"
+                    required
+                  />
                 </div>
+              </div>
 
-                <div className="mt-4 space-y-3">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">Password</label>
                   <button
                     type="button"
-                    onClick={() => {
-                      setAuthMethod('phone');
-                      setError('');
-                    }}
-                    disabled={loading}
-                    className="w-full flex items-center justify-center gap-3 bg-white border-2 border-blue-600 hover:bg-blue-50 text-blue-600 font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => switchView('forgot-password')}
+                    className="text-sm text-orange-500 hover:text-orange-600 font-medium"
                   >
-                    <Smartphone className="h-5 w-5" />
-                    Continue with Phone
+                    Forgot password?
                   </button>
-
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-11 pr-11 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-transparent"
+                    placeholder="Enter your password"
+                    required
+                  />
                   <button
-                    onClick={handleGoogleSignIn}
-                    disabled={loading}
-                    className="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                   >
-                    <svg className="h-5 w-5" viewBox="0 0 24 24">
-                      <path
-                        fill="#4285F4"
-                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                      />
-                      <path
-                        fill="#34A853"
-                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                      />
-                      <path
-                        fill="#FBBC05"
-                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                      />
-                      <path
-                        fill="#EA4335"
-                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                      />
-                    </svg>
-                    Continue with Google
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
                 </div>
               </div>
 
-              <div className="mt-6 text-center">
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Please wait...' : 'Sign In'}
+              </button>
+
+              <div className="text-center mt-4">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsSignUp(!isSignUp);
-                    setSignUpPhone('');
-                    setError('');
-                  }}
-                  className="text-blue-600 hover:text-blue-700 font-medium text-sm"
+                  onClick={() => switchView('sign-up')}
+                  className="text-orange-500 hover:text-orange-600 font-medium text-sm"
                 >
-                  {isSignUp
-                    ? 'Already have an account? Sign In'
-                    : "Don't have an account? Sign Up"}
+                  Don't have an account? Sign Up
                 </button>
               </div>
-            </>
+            </form>
+          )}
+
+          {view === 'sign-up' && (
+            <form onSubmit={handleSignUp} className="space-y-5">
+              <button
+                type="button"
+                onClick={() => switchView('sign-in')}
+                className="flex items-center gap-2 text-gray-500 hover:text-gray-700 text-sm mb-2"
+              >
+                <ArrowLeft size={16} />
+                Back to Sign In
+              </button>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-transparent"
+                    placeholder="Enter your full name"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Phone Number <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type="tel"
+                    value={signUpPhone}
+                    onChange={(e) => setSignUpPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-transparent"
+                    placeholder="Enter 10-digit phone number"
+                    required
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Required for booking confirmations</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-transparent"
+                    placeholder="Enter your email"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-11 pr-11 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-transparent"
+                    placeholder="Minimum 6 characters"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Password must be at least 6 characters</p>
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Creating account...' : 'Create Account'}
+              </button>
+
+              <div className="text-center mt-4">
+                <button
+                  type="button"
+                  onClick={() => switchView('sign-in')}
+                  className="text-orange-500 hover:text-orange-600 font-medium text-sm"
+                >
+                  Already have an account? Sign In
+                </button>
+              </div>
+            </form>
+          )}
+
+          {view === 'forgot-password' && (
+            <form onSubmit={handleForgotPassword} className="space-y-5">
+              <button
+                type="button"
+                onClick={() => switchView('sign-in')}
+                className="flex items-center gap-2 text-gray-500 hover:text-gray-700 text-sm mb-2"
+              >
+                <ArrowLeft size={16} />
+                Back to Sign In
+              </button>
+
+              <p className="text-sm text-gray-600">
+                Enter the email address associated with your account and we'll send you a link to reset your password.
+              </p>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full pl-11 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-400 focus:border-transparent"
+                    placeholder="Enter your email"
+                    required
+                  />
+                </div>
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Sending...' : 'Send Reset Link'}
+              </button>
+            </form>
+          )}
+
+          {view === 'forgot-sent' && (
+            <div className="space-y-5 text-center">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                <Mail className="h-8 w-8 text-green-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">Email sent!</h3>
+                <p className="text-sm text-gray-600">
+                  We've sent a password reset link to <strong>{email}</strong>. Please check your inbox and follow the instructions.
+                </p>
+              </div>
+              <p className="text-xs text-gray-500">
+                Didn't receive the email? Check your spam folder or{' '}
+                <button
+                  type="button"
+                  onClick={() => switchView('forgot-password')}
+                  className="text-orange-500 hover:text-orange-600 font-medium"
+                >
+                  try again
+                </button>
+                .
+              </p>
+              <button
+                type="button"
+                onClick={() => switchView('sign-in')}
+                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-lg transition-colors"
+              >
+                Back to Sign In
+              </button>
+            </div>
           )}
         </div>
 
