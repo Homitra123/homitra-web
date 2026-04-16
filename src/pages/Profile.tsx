@@ -333,7 +333,6 @@ const Profile = () => {
       {activePanel === 'privacy' && (
         <PrivacySecurityPanel
           onClose={() => setActivePanel(null)}
-          onAccountDeleted={() => navigate('/login', { replace: true })}
         />
       )}
     </div>

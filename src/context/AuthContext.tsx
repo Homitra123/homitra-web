@@ -6,6 +6,8 @@ interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
+  isRecoveryMode: boolean;
+  clearRecoveryMode: () => void;
   signUp: (email: string, password: string, fullName: string, phone: string) => Promise<{ error: AuthError | null }>;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   resetPassword: (email: string) => Promise<{ error: AuthError | null }>;
@@ -28,6 +30,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
+
+  const clearRecoveryMode = () => setIsRecoveryMode(false);
 
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
@@ -106,7 +111,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(false);
 
       const { data } = supabase.auth.onAuthStateChange(
-        (_event, session) => {
+        (event, session) => {
+          if (event === 'PASSWORD_RECOVERY') {
+            setIsRecoveryMode(true);
+            setUser(session?.user ?? null);
+            return;
+          }
+
           setUser(session?.user ?? null);
 
           (async () => {
@@ -205,6 +216,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     user,
     profile,
     loading,
+    isRecoveryMode,
+    clearRecoveryMode,
     signUp,
     signIn,
     resetPassword,

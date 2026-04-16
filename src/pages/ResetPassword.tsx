@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 
 const ResetPassword = () => {
   const navigate = useNavigate();
+  const { isRecoveryMode, clearRecoveryMode } = useAuth();
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -13,26 +15,6 @@ const ResetPassword = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-  const [validSession, setValidSession] = useState(false);
-  const [checking, setChecking] = useState(true);
-
-  useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setValidSession(true);
-        setChecking(false);
-      }
-    });
-
-    const timer = setTimeout(() => {
-      setChecking(false);
-    }, 3000);
-
-    return () => {
-      data.subscription.unsubscribe();
-      clearTimeout(timer);
-    };
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,6 +36,7 @@ const ResetPassword = () => {
     if (updateError) {
       setError(updateError.message);
     } else {
+      clearRecoveryMode();
       setSuccess(true);
       setTimeout(() => {
         navigate('/login');
@@ -62,17 +45,6 @@ const ResetPassword = () => {
 
     setLoading(false);
   };
-
-  if (checking) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-orange-50 flex items-center justify-center px-4">
-        <div className="text-center">
-          <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600 text-sm">Verifying reset link...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-orange-50 flex items-center justify-center px-4 py-8">
@@ -99,7 +71,7 @@ const ResetPassword = () => {
                 Your password has been changed successfully. Redirecting you to sign in...
               </p>
             </div>
-          ) : !validSession ? (
+          ) : !isRecoveryMode ? (
             <div className="text-center space-y-4">
               <p className="text-sm text-gray-600">
                 This reset link is invalid or has expired. Please request a new one.
