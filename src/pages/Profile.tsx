@@ -3,10 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { Mail, Phone, ChevronRight, LogOut, Bell, Shield, HelpCircle, CreditCard as Edit2, X, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import NotificationsPanel from '../components/profile/NotificationsPanel';
+import HelpSupportPanel from '../components/profile/HelpSupportPanel';
+import PrivacySecurityPanel from '../components/profile/PrivacySecurityPanel';
+
+type ActivePanel = 'notifications' | 'help' | 'privacy' | null;
 
 const Profile = () => {
   const { user, profile, signOut, updateProfile } = useAuth();
   const navigate = useNavigate();
+  const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [isEditingPhone, setIsEditingPhone] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
@@ -108,9 +114,9 @@ const Profile = () => {
   };
 
   const menuItems = [
-    { icon: Bell, label: 'Notifications', description: 'Manage your alerts' },
-    { icon: Shield, label: 'Privacy & Security', description: 'Account protection' },
-    { icon: HelpCircle, label: 'Help & Support', description: 'Get assistance' },
+    { icon: Bell, label: 'Notifications', description: 'Manage your alerts', onClick: () => setActivePanel('notifications') },
+    { icon: Shield, label: 'Privacy & Security', description: 'Account protection', onClick: () => setActivePanel('privacy') },
+    { icon: HelpCircle, label: 'Help & Support', description: 'Get assistance', onClick: () => setActivePanel('help') },
   ];
 
   if (!profile) return null;
@@ -287,6 +293,7 @@ const Profile = () => {
           {menuItems.map((item, index) => (
             <button
               key={index}
+              onClick={item.onClick}
               className="w-full flex items-center justify-between p-6 md:px-8 hover:bg-gray-50 transition-colors group"
             >
               <div className="flex items-center space-x-4">
@@ -316,6 +323,19 @@ const Profile = () => {
         <p>Homitra v1.0.0</p>
         <p className="mt-1">Premium Home Services</p>
       </div>
+
+      {activePanel === 'notifications' && (
+        <NotificationsPanel onClose={() => setActivePanel(null)} />
+      )}
+      {activePanel === 'help' && (
+        <HelpSupportPanel onClose={() => setActivePanel(null)} />
+      )}
+      {activePanel === 'privacy' && (
+        <PrivacySecurityPanel
+          onClose={() => setActivePanel(null)}
+          onAccountDeleted={() => navigate('/login', { replace: true })}
+        />
+      )}
     </div>
   );
 };

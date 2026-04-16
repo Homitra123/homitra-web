@@ -58,7 +58,7 @@ export const services: Service[] = [
     description: 'Professional car cleaning and detailing service at your doorstep',
     icon: 'Car',
     basePrice: 149,
-    image: '/Car_Cleaning_service_image.png',
+    image: '/Car_Cleaning_service_image.jpg',
     pricingTiers: [
       {
         id: 'express-exterior',
@@ -112,7 +112,7 @@ export const services: Service[] = [
     description: 'Professional household help for cleaning, events, and parties. Perfect for everyday tasks and special occasions.',
     icon: 'Home',
     basePrice: 199,
-    image: '/Home_Assiatnt_Pic.png',
+    image: '/Home_Assiatnt_Pic.jpg',
     pricingTiers: [
       {
         id: 'home-assistant-hourly',
