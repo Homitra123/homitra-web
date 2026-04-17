@@ -121,7 +121,7 @@ export const services: Service[] = [
         duration: 'Per hour',
         features: [],
         included: [
-          'House help cleaning services',
+          'House help cleaning services and Utensils Cleaning',
           'Party helper and event assistant for general tasks',
           'Preparing snacks, managing buffet, and clearing plates',
           'On-demand waitstaff for serving appetizers and dining area',

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -6,7 +6,8 @@ import { useAuth } from '../context/AuthContext';
 
 const ResetPassword = () => {
   const navigate = useNavigate();
-  const { isRecoveryMode, clearRecoveryMode } = useAuth();
+  const { isRecoveryMode, clearRecoveryMode, loading: authLoading } = useAuth();
+  const [waitingForAuth, setWaitingForAuth] = useState(true);
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -15,6 +16,13 @@ const ResetPassword = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    if (!authLoading) {
+      const timer = setTimeout(() => setWaitingForAuth(false), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [authLoading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,6 +78,11 @@ const ResetPassword = () => {
               <p className="text-sm text-gray-600">
                 Your password has been changed successfully. Redirecting you to sign in...
               </p>
+            </div>
+          ) : waitingForAuth ? (
+            <div className="text-center space-y-4 py-4">
+              <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-sm text-gray-500">Verifying reset link...</p>
             </div>
           ) : !isRecoveryMode ? (
             <div className="text-center space-y-4">

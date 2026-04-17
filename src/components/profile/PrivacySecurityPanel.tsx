@@ -39,9 +39,8 @@ const PrivacySecurityPanel = ({ onClose }: Props) => {
       setNewPassword('');
       setConfirmPassword('');
       setTimeout(() => {
-        setPwSuccess(false);
-        setView('menu');
-      }, 2000);
+        onClose();
+      }, 1500);
     }
   };
 

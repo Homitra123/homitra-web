@@ -115,6 +115,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (event === 'PASSWORD_RECOVERY') {
             setIsRecoveryMode(true);
             setUser(session?.user ?? null);
+            setLoading(false);
             return;
           }
 
@@ -154,7 +155,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const signUp = async (email: string, password: string, fullName: string, phone: string) => {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -164,6 +165,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         },
       },
     });
+
+    if (!error && data.user) {
+      await supabase
+        .from('profiles')
+        .upsert({
+          id: data.user.id,
+          email: email,
+          full_name: fullName,
+          phone: phone,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'id' });
+    }
 
     return { error };
   };
