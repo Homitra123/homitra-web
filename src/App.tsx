@@ -13,6 +13,7 @@ import Bookings from './pages/Bookings';
 import Profile from './pages/Profile';
 import BookingSuccess from './pages/BookingSuccess';
 import ResetPassword from './pages/ResetPassword';
+import AuthEventHandler from './components/AuthEventHandler';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
       <AuthProvider>
         <AppProvider>
           <Router>
+          <AuthEventHandler />
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/reset-password" element={<ResetPassword />} />
