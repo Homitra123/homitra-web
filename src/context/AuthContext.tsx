@@ -80,77 +80,61 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    let subscription: any = null;
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsRecoveryMode(true);
+        setUser(session?.user ?? null);
+        setLoading(false);
+        return;
+      }
 
-    const initAuth = async () => {
-      console.log('[AuthContext] Initializing auth...');
-      const { data: { session } } = await supabase.auth.getSession();
-      console.log('[AuthContext] Session:', session?.user?.id || 'No session');
       setUser(session?.user ?? null);
 
-      if (session?.user) {
-        console.log('[AuthContext] User found, fetching profile...');
-        let profileData = await fetchProfile(session.user.id);
+      (async () => {
+        if (session?.user) {
+          let profileData = await fetchProfile(session.user.id);
 
-        if (!profileData) {
-          console.log('[AuthContext] Profile not found, creating new profile');
-          profileData = await createProfile(
-            session.user.id,
-            session.user.email!,
-            session.user.user_metadata?.full_name,
-            session.user.user_metadata?.phone
-          );
-        } else {
-          console.log('[AuthContext] Profile loaded:', profileData.id);
-        }
-
-        setProfile(profileData);
-      }
-
-      console.log('[AuthContext] Auth initialization complete, setting loading to false');
-      setLoading(false);
-
-      const { data } = supabase.auth.onAuthStateChange(
-        (event, session) => {
-          if (event === 'PASSWORD_RECOVERY') {
-            setIsRecoveryMode(true);
-            setUser(session?.user ?? null);
-            setLoading(false);
-            return;
+          if (!profileData) {
+            profileData = await createProfile(
+              session.user.id,
+              session.user.email!,
+              session.user.user_metadata?.full_name,
+              session.user.user_metadata?.phone
+            );
           }
 
-          setUser(session?.user ?? null);
-
-          (async () => {
-            if (session?.user) {
-              let profileData = await fetchProfile(session.user.id);
-
-              if (!profileData) {
-                profileData = await createProfile(
-                  session.user.id,
-                  session.user.email!,
-                  session.user.user_metadata?.full_name,
-                  session.user.user_metadata?.phone
-                );
-              }
-
-              setProfile(profileData);
-            } else {
-              setProfile(null);
-            }
-          })();
+          setProfile(profileData);
+        } else {
+          setProfile(null);
         }
-      );
 
-      subscription = data.subscription;
-    };
+        setLoading(false);
+      })();
+    });
 
-    initAuth();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUser(session.user);
+        (async () => {
+          let profileData = await fetchProfile(session.user.id);
+          if (!profileData) {
+            profileData = await createProfile(
+              session.user.id,
+              session.user.email!,
+              session.user.user_metadata?.full_name,
+              session.user.user_metadata?.phone
+            );
+          }
+          setProfile(profileData);
+          setLoading(false);
+        })();
+      } else {
+        setLoading(false);
+      }
+    });
 
     return () => {
-      if (subscription) {
-        subscription.unsubscribe();
-      }
+      data.subscription.unsubscribe();
     };
   }, []);
 

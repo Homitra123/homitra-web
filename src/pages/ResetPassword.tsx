@@ -6,7 +6,11 @@ import { useAuth } from '../context/AuthContext';
 
 const ResetPassword = () => {
   const navigate = useNavigate();
-  const { isRecoveryMode, clearRecoveryMode, loading: authLoading } = useAuth();
+  const { isRecoveryMode, clearRecoveryMode } = useAuth();
+
+  const hasRecoveryHash = typeof window !== 'undefined' &&
+    (window.location.hash.includes('type=recovery') || window.location.hash.includes('type=passwordReset'));
+
   const [waitingForAuth, setWaitingForAuth] = useState(true);
 
   const [password, setPassword] = useState('');
@@ -18,11 +22,9 @@ const ResetPassword = () => {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    if (!authLoading) {
-      const timer = setTimeout(() => setWaitingForAuth(false), 800);
-      return () => clearTimeout(timer);
-    }
-  }, [authLoading]);
+    const timer = setTimeout(() => setWaitingForAuth(false), 1500);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,7 +86,7 @@ const ResetPassword = () => {
               <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto" />
               <p className="text-sm text-gray-500">Verifying reset link...</p>
             </div>
-          ) : !isRecoveryMode ? (
+          ) : !isRecoveryMode && !hasRecoveryHash ? (
             <div className="text-center space-y-4">
               <p className="text-sm text-gray-600">
                 This reset link is invalid or has expired. Please request a new one.
