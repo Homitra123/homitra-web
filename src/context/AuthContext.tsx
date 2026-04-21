@@ -160,6 +160,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           phone: phone,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' });
+
+      const profileData = await fetchProfile(data.user.id);
+      setProfile(profileData);
     }
 
     return { error };

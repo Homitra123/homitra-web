@@ -9,6 +9,10 @@ import { BANGALORE_LOCATIONS, DURATIONS, TIME_PERIODS, TIME_SLOTS } from '../typ
 import { isTimeSlotDisabled } from '../lib/timeUtils';
 import DatePickerInput from '../components/DatePickerInput';
 
+const DURATION_PRICE_MAP: Record<number, number> = Object.fromEntries(
+  DURATIONS.map(d => [d.minutes, d.price])
+);
+
 interface ScheduledBooking {
   id: string;
   date: string;
@@ -140,9 +144,13 @@ const ServiceBooking = () => {
       flexibleBookings: isMultipleBooking ? scheduledBookings : null,
       location: data.location,
       address: data.address,
-      price: isMultipleBooking
-        ? selectedTierData.price * scheduledBookings.length
-        : selectedTierData.price,
+      price: (() => {
+        const hasDuration = service.id !== 'car-cleaning';
+        const unitPrice = (hasDuration && data.duration && DURATION_PRICE_MAP[data.duration])
+          ? DURATION_PRICE_MAP[data.duration]
+          : selectedTierData.price;
+        return isMultipleBooking ? unitPrice * scheduledBookings.length : unitPrice;
+      })(),
       visits: isMultipleBooking ? scheduledBookings.length : 1,
     };
 
