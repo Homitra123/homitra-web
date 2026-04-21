@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, useLocation, Link } from 'react-router-dom';
 import { CheckCircle, Calendar, Clock, MapPin, IndianRupee, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { clearPendingBooking } from '../lib/bookingSession';
 
 interface BookingDetails {
   id: string;
@@ -24,6 +25,7 @@ const BookingSuccess = () => {
     searchParams.get('booking_id');
 
   useEffect(() => {
+    clearPendingBooking();
     const load = async () => {
       try {
         let query = supabase.from('bookings').select('id, service_name, date, time_slot, address, price, tier');

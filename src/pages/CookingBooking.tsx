@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar as CalendarIcon, Clock, ChefHat, MapPin, ChevronDown, ChevronUp } from 'lucide-react';
 import { TIME_SLOTS as GLOBAL_TIME_SLOTS, BANGALORE_LOCATIONS } from '../types';
@@ -9,6 +9,7 @@ import VegCustomizer from '../components/cooking/VegCustomizer';
 import NonVegCustomizer from '../components/cooking/NonVegCustomizer';
 import BitesCustomizer from '../components/cooking/BitesCustomizer';
 import MonthlyCustomizer from '../components/cooking/MonthlyCustomizer';
+import { savePendingBooking, getPendingBooking, clearPendingBooking, PendingBooking } from '../lib/bookingSession';
 
 type BookingMode = 'single' | 'custom' | 'flexible';
 type TimeCategory = 'morning' | 'afternoon' | 'evening';
@@ -35,6 +36,15 @@ const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 const CookingBooking = () => {
   const navigate = useNavigate();
+
+  const [pendingResume, setPendingResume] = useState<PendingBooking | null>(null);
+
+  useEffect(() => {
+    const saved = getPendingBooking();
+    if (saved && saved.serviceRoute === '/service/home-cooking') {
+      setPendingResume(saved);
+    }
+  }, []);
 
   const [selectedPlan, setSelectedPlan] = useState<PlanId | ''>('');
   const [customizerPrice, setCustomizerPrice] = useState(0);
@@ -325,6 +335,7 @@ const CookingBooking = () => {
         ...( customizerDetails as object ?? {} ),
       },
     };
+    savePendingBooking(bookingData as unknown as Record<string, unknown>, '/service/home-cooking');
     navigate('/checkout', { state: { bookingData } });
   };
 
@@ -350,6 +361,30 @@ const CookingBooking = () => {
 
         {!selectedPlan && (
           <div>
+            {pendingResume && (
+              <div className="mb-5 bg-orange-50 border border-orange-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-orange-900 text-sm">You have an incomplete booking</p>
+                  <p className="text-orange-700 text-sm mt-0.5">
+                    {String(pendingResume.bookingData.tier ?? '')} &mdash; ₹{String(pendingResume.bookingData.price ?? '')}
+                  </p>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => navigate('/checkout', { state: { bookingData: pendingResume.bookingData } })}
+                    className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-lg transition-colors"
+                  >
+                    Resume Booking
+                  </button>
+                  <button
+                    onClick={() => { clearPendingBooking(); setPendingResume(null); }}
+                    className="px-4 py-2 bg-white border border-orange-300 text-orange-700 text-sm font-medium rounded-lg hover:bg-orange-100 transition-colors"
+                  >
+                    Start Fresh
+                  </button>
+                </div>
+              </div>
+            )}
             <p className="text-gray-500 text-sm mb-6 font-semibold">
               Select the plan that best fits your household. Pricing will be shown once you customise.
             </p>

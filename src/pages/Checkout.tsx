@@ -3,6 +3,7 @@ import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Calendar, Clock, MapPin, CreditCard, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import PaymentModal from '../components/PaymentModal';
+import { getPendingBooking } from '../lib/bookingSession';
 
 interface BookingData {
   serviceId: string;
@@ -22,7 +23,7 @@ const Checkout = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [phoneError, setPhoneError] = useState(false);
 
-  const bookingData = location.state?.bookingData as BookingData | undefined;
+  const bookingData = (location.state?.bookingData ?? getPendingBooking()?.bookingData) as BookingData | undefined;
 
   useEffect(() => {
     if (profile && !profile.phone) {

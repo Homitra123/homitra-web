@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -8,6 +8,7 @@ import { services } from '../data/mockData';
 import { BANGALORE_LOCATIONS, DURATIONS, TIME_PERIODS, TIME_SLOTS } from '../types';
 import { isTimeSlotDisabled } from '../lib/timeUtils';
 import DatePickerInput from '../components/DatePickerInput';
+import { savePendingBooking, getPendingBooking, clearPendingBooking, PendingBooking } from '../lib/bookingSession';
 
 const DURATION_PRICE_MAP: Record<number, number> = Object.fromEntries(
   DURATIONS.map(d => [d.minutes, d.price])
@@ -40,6 +41,14 @@ const ServiceBooking = () => {
   const [selectedTimePeriod, setSelectedTimePeriod] = useState<string>('');
   const [scheduledBookings, setScheduledBookings] = useState<ScheduledBooking[]>([]);
   const [isMultipleBooking, setIsMultipleBooking] = useState<boolean>(false);
+  const [pendingResume, setPendingResume] = useState<PendingBooking | null>(null);
+
+  useEffect(() => {
+    const saved = getPendingBooking();
+    if (saved && saved.serviceRoute === `/service/${serviceId}`) {
+      setPendingResume(saved);
+    }
+  }, [serviceId]);
 
   const service = services.find(s => s.id === serviceId);
 
@@ -154,6 +163,7 @@ const ServiceBooking = () => {
       visits: isMultipleBooking ? scheduledBookings.length : 1,
     };
 
+    savePendingBooking(bookingData as unknown as Record<string, unknown>, `/service/${service.id}`);
     navigate('/checkout', { state: { bookingData } });
   };
 
@@ -177,6 +187,31 @@ const ServiceBooking = () => {
         <ArrowLeft size={20} />
         <span className="font-medium">Back</span>
       </button>
+
+      {pendingResume && (
+        <div className="mb-6 bg-orange-50 border border-orange-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <p className="font-semibold text-orange-900 text-sm">You have an incomplete booking</p>
+            <p className="text-orange-700 text-sm mt-0.5">
+              {String(pendingResume.bookingData.serviceName ?? '')} &mdash; ₹{String(pendingResume.bookingData.price ?? '')}
+            </p>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <button
+              onClick={() => navigate('/checkout', { state: { bookingData: pendingResume.bookingData } })}
+              className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-lg transition-colors"
+            >
+              Resume Booking
+            </button>
+            <button
+              onClick={() => { clearPendingBooking(); setPendingResume(null); }}
+              className="px-4 py-2 bg-white border border-orange-300 text-orange-700 text-sm font-medium rounded-lg hover:bg-orange-100 transition-colors"
+            >
+              Start Fresh
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 mb-6">
         <h1 className="text-3xl md:text-4xl font-bold text-orange-600 mb-3">

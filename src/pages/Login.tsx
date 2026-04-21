@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Mail, Lock, User, Eye, EyeOff, Smartphone, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -7,6 +7,7 @@ type View = 'sign-in' | 'sign-up' | 'forgot-password' | 'forgot-sent';
 
 const Login = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { signIn, signUp, resetPassword } = useAuth();
 
   const [view, setView] = useState<View>('sign-in');
@@ -18,7 +19,11 @@ const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const from = '/';
+  const fromLocation = (location.state as { from?: { pathname: string; state?: unknown } } | null)?.from;
+
+  const redirectAfterAuth = () => {
+    navigate(fromLocation?.pathname ?? '/', { state: fromLocation?.state, replace: true });
+  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,7 +44,7 @@ const Login = () => {
         setError(signInError.message);
       }
     } else {
-      navigate(from, { replace: true });
+      redirectAfterAuth();
     }
 
     setLoading(false);
@@ -73,7 +78,7 @@ const Login = () => {
         setError(signUpError.message);
       }
     } else {
-      navigate(from, { replace: true });
+      redirectAfterAuth();
     }
 
     setLoading(false);
