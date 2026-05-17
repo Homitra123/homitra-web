@@ -40,6 +40,14 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
     };
   }, []);
 
+  const saveAddressToProfile = async (location: string, address: string) => {
+    if (!user?.id) return;
+    await supabase
+      .from('profiles')
+      .update({ location, address, updated_at: new Date().toISOString() })
+      .eq('id', user.id);
+  };
+
   const completeBooking = async (razorpayPaymentId: string) => {
     if (!razorpayPaymentId) throw new Error('Payment ID is missing');
     if (!user?.id) throw new Error('User not authenticated');
@@ -63,6 +71,7 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
       status: 'confirmed',
       payment_id: razorpayPaymentId,
       customization_details: bookingData.customizerDetails || null,
+      is_intro_priced: bookingData.isIntroPriced ?? false,
     };
 
     const token = accessTokenRef.current;
@@ -141,6 +150,9 @@ const PaymentModal = ({ amount, bookingData, onClose }: PaymentModalProps) => {
 
           completeBooking(response.razorpay_payment_id)
             .then((result) => {
+              if (bookingData.location && bookingData.address) {
+                saveAddressToProfile(bookingData.location, bookingData.address).catch(() => {});
+              }
               fetch(
                 `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-booking-notification`,
                 {

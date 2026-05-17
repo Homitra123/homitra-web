@@ -13,9 +13,10 @@ export interface NonVegState {
 
 interface NonVegCustomizerProps {
   onChange: (state: NonVegState, price: number, isValid: boolean) => void;
+  initialState?: Partial<NonVegState>;
 }
 
-const NonVegCustomizer = ({ onChange }: NonVegCustomizerProps) => {
+const NonVegCustomizer = ({ onChange, initialState }: NonVegCustomizerProps) => {
   const [state, setState] = useState<NonVegState>({
     people: 2,
     nonVegItem: '',
@@ -23,6 +24,7 @@ const NonVegCustomizer = ({ onChange }: NonVegCustomizerProps) => {
     addExtraNonVeg: '',
     addDal: '',
     specialRequest: '',
+    ...initialState,
   });
 
   const basePrice = getNonVegPrice(state.people);
@@ -85,7 +87,7 @@ const NonVegCustomizer = ({ onChange }: NonVegCustomizerProps) => {
           <div className="text-sm text-gray-600 min-w-0">Can choose from Jeera / Lemon / Tomato / Pulav / Plain</div>
         </div>
         <div className="px-4 py-3 bg-white">
-          <div className="text-[11px] font-semibold text-orange-700 uppercase tracking-wide mb-2">
+          <div className="text-xs font-bold text-orange-700 uppercase tracking-widest mb-2">
             Non-Veg Item <span className="text-red-500">*</span>
           </div>
           <select

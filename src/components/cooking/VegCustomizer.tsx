@@ -12,15 +12,17 @@ export interface VegState {
 
 interface VegCustomizerProps {
   onChange: (state: VegState, price: number, isValid: boolean) => void;
+  initialState?: Partial<VegState>;
 }
 
-const VegCustomizer = ({ onChange }: VegCustomizerProps) => {
+const VegCustomizer = ({ onChange, initialState }: VegCustomizerProps) => {
   const [state, setState] = useState<VegState>({
     people: 2,
     vegetable: '',
     extraRotisCount: 0,
     addExtraVeg: '',
     specialRequest: '',
+    ...initialState,
   });
 
   const basePrice = getVegPrice(state.people);
@@ -86,7 +88,7 @@ const VegCustomizer = ({ onChange }: VegCustomizerProps) => {
           <div className="text-sm text-gray-600 min-w-0">Can choose from Jeera / Lemon / Tomato / Pulav / Plain</div>
         </div>
         <div className="px-4 py-3 bg-white">
-          <div className="text-[11px] font-semibold text-orange-700 uppercase tracking-wide mb-2">
+          <div className="text-xs font-bold text-orange-700 uppercase tracking-widest mb-2">
             Vegetable <span className="text-red-500">*</span>
           </div>
           <select

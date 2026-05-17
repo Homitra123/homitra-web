@@ -17,12 +17,13 @@ export interface BitesState {
 
 interface BitesCustomizerProps {
   onChange: (state: BitesState, price: number, isValid: boolean) => void;
+  initialState?: Partial<BitesState>;
 }
 
 const EXTRA_CURATED_PRICE = 50;
 const EXTRA_STREET_PRICE = 70;
 
-const BitesCustomizer = ({ onChange }: BitesCustomizerProps) => {
+const BitesCustomizer = ({ onChange, initialState }: BitesCustomizerProps) => {
   const [state, setState] = useState<BitesState>({
     people: 2,
     dishType: '',
@@ -32,6 +33,7 @@ const BitesCustomizer = ({ onChange }: BitesCustomizerProps) => {
     beverage: '',
     extraCuratedItems: [],
     extraStreetFoodItems: [],
+    ...initialState,
   });
 
   const hasDish =
@@ -144,7 +146,7 @@ const BitesCustomizer = ({ onChange }: BitesCustomizerProps) => {
 
       <div className="mt-8">
         <div className="mb-1">
-          <h3 className="text-lg font-bold text-gray-900">
+          <h3 className="text-xl font-bold text-gray-900">
             Choose or Customise your Plan
             <span className="text-red-500 ml-1">*</span>
           </h3>
@@ -221,7 +223,7 @@ const BitesCustomizer = ({ onChange }: BitesCustomizerProps) => {
 
       <div className="mt-6 border border-gray-200 rounded-xl overflow-hidden">
         <div className="flex items-center gap-4 px-5 py-4 bg-white">
-          <div className="flex-shrink-0 text-sm font-bold text-orange-700 uppercase tracking-wide">
+          <div className="flex-shrink-0 text-sm font-bold text-orange-800 uppercase tracking-widest">
             Beverage <span className="text-red-500">*</span>
           </div>
           <div className="flex flex-wrap gap-2 flex-1">

@@ -3,6 +3,10 @@
 @tailwind utilities;
 
 @layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+
   .animate-slide-up {
     animation: slideUp 0.3s ease-out;
   }
@@ -16,5 +20,15 @@
       transform: translateY(0);
       opacity: 1;
     }
+  }
+
+  .intro-badge-glow {
+    animation: introPulse 3s ease-in-out infinite;
+  }
+
+  @keyframes introPulse {
+    0%   { box-shadow: 0 0 2px 1px rgba(251, 191, 36, 0.25); background-color: #fbbf24; }
+    50%  { box-shadow: 0 0 7px 3px rgba(251, 191, 36, 0.45); background-color: #fcd34d; }
+    100% { box-shadow: 0 0 2px 1px rgba(251, 191, 36, 0.25); background-color: #fbbf24; }
   }
 }

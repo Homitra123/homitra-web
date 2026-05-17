@@ -18,6 +18,7 @@ export interface MonthlyState {
 
 interface MonthlyCustomizerProps {
   onChange: (state: MonthlyState, price: number, isValid: boolean) => void;
+  initialState?: Partial<MonthlyState>;
 }
 
 const UPFRONT_OPTIONS: { months: 1 | 2 | 3; label: string }[] = [
@@ -29,7 +30,7 @@ const UPFRONT_OPTIONS: { months: 1 | 2 | 3; label: string }[] = [
 const NON_VEG_ADDON_PRICE = 1000;
 const DEEP_CLEANING_ADDON_PRICE = 1000;
 
-const MonthlyCustomizer = ({ onChange }: MonthlyCustomizerProps) => {
+const MonthlyCustomizer = ({ onChange, initialState }: MonthlyCustomizerProps) => {
   const [state, setState] = useState<MonthlyState>({
     people: 2,
     mealFrequency: '1meal',
@@ -37,6 +38,7 @@ const MonthlyCustomizer = ({ onChange }: MonthlyCustomizerProps) => {
     addNonVeg: false,
     addDeepCleaning: false,
     specialRequest: '',
+    ...initialState,
   });
   const [showLargeGroupBanner, setShowLargeGroupBanner] = useState(false);
 
@@ -123,7 +125,7 @@ const MonthlyCustomizer = ({ onChange }: MonthlyCustomizerProps) => {
       </div>
 
       <div>
-        <label className="block text-sm font-semibold text-gray-800 mb-3">
+        <label className="block text-base font-bold text-gray-900 mb-3">
           Meal Frequency <span className="text-red-500">*</span>
         </label>
         <div className="grid grid-cols-1 gap-2">

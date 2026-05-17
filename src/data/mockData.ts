@@ -53,6 +53,57 @@ export const services: Service[] = [
     ]
   },
   {
+    id: 'premier-housekeep',
+    name: 'Premier House-keep Services',
+    description: 'Expert household cleaning, kitchen support, and laundry care — keeping every corner of your home fresh and tidy.',
+    icon: 'Sparkles',
+    basePrice: 249,
+    image: '/House_Keep_Pic_new.jpg',
+    pricingTiers: [
+      {
+        id: 'premier-housekeep-standard',
+        name: 'Premier House-keep',
+        price: 249,
+        duration: 'Starting at 2 hours',
+        features: [],
+        includedGroups: [
+          {
+            heading: 'Household Cleaning Support',
+            items: [
+              'Thoroughly sweep and mop all accessible flooring.',
+              'Carefully dust and wipe furniture, wardrobes, fans, and ceilings.',
+              'Refresh the living space by changing or rearranging existing bedding.',
+            ]
+          },
+          {
+            heading: 'Kitchen Support',
+            items: [
+              'Systematically wash all household utensils and deep-clean the kitchen sink.',
+              'Degrease burners and wipe down the stovetop for a clean cooking area.',
+              'Ensure hygiene by disposing of all wet and dry kitchen waste.',
+            ]
+          },
+          {
+            heading: 'Laundry Support',
+            items: [
+              'Manage the full cycle of clothes machine washing.',
+              'Provide neat organization by arranging clothes in cupboards.',
+              'Offer professional finish by ironing regular daily wear.',
+            ]
+          }
+        ],
+        notIncluded: [
+          'Deep cleaning of bathrooms or kitchen appliances',
+          'Grocery shopping or ingredient procurement',
+          'Cooking or meal preparation',
+          'Pest control or disinfection treatments',
+          'Window or external glass cleaning',
+          'Repairs or maintenance work of any kind'
+        ]
+      }
+    ]
+  },
+  {
     id: 'car-cleaning',
     name: 'Car Cleaning',
     description: 'Professional car cleaning and detailing service at your doorstep',
@@ -107,6 +158,67 @@ export const services: Service[] = [
     ]
   },
   {
+    id: 'deep-bathroom-cleaning',
+    name: 'Deep Bathroom Cleaning',
+    description: 'Professional deep cleaning of your bathrooms — tiles, fixtures, drains, and surfaces scrubbed spotless.',
+    icon: 'ShowerHead',
+    basePrice: 499,
+    image: '/Bathroom_Cleaning_PicNew.jpg',
+    pricingTiers: [
+      {
+        id: 'deep-bathroom-standard',
+        name: 'Deep Bathroom Clean',
+        price: 499,
+        duration: 'Approx. 45 mins',
+        features: [],
+        included: [
+          'Floor and wall tile scrubbing and descaling',
+          'Toilet bowl, seat, and tank deep cleaning and sanitization',
+          'Bathtub and shower area scrubbing and stain removal',
+          'Washbasin, Tap, Showerhead and mirror cleaning',
+          'Exhaust fan exterior cleaning',
+          'Complete surface disinfection and deodorizing'
+        ],
+        notIncluded: [
+          'Plumbing repairs, pipe work, Electrical fixture repairs or tile replacement',
+          'Pest control treatment',
+          'Washing or laundering of towels and bath mats',
+          'Painting or waterproofing work'
+        ]
+      }
+    ]
+  },
+  {
+    id: 'pest-control',
+    name: 'Pest Control Service',
+    description: 'Safe and effective pest control treatments to keep your home free from cockroaches, ants, mosquitoes, and common household pests.',
+    icon: 'Bug',
+    basePrice: 999,
+    image: '/Pest_Control_Pic.jpg',
+    pricingTiers: [
+      {
+        id: 'pest-control-standard',
+        name: 'Targeted Treatment Plan',
+        price: 999,
+        duration: '',
+        features: [],
+        included: [
+          'Cockroach Control: 2-visit spray and gel treatment to break the breeding cycle and kill new hatchlings.',
+          'Ant Control: 2-visit Strategic bait gel application in cracks and trails to eliminate colonies from the source.',
+          'Bed Bugs Control: High-potency spray for mattresses and furniture joints to reach deep hiding spots.',
+          'Rodent Control: Industrial glue boards and baiting in high-activity zones with entry-point checks.',
+          'Mosquito Control: Wall-surface residual sprays treatment to halt indoor breeding as an Add-on Service.',
+          'Crawling Insects: Barrier spray to corners and boards to neutralize spiders & crawlers as an Add-on Service.'
+        ],
+        notIncluded: [
+          'Specialized Care: Excludes termite, wood borer, and beehive treatments.',
+          'Repairs & Cleaning: No sealing of holes, grease removal, or rodent disposal.',
+          'Post-Service: Technicians will not wash surfaces or handle utensils/laundry/bedding.'
+        ]
+      }
+    ]
+  },
+  {
     id: 'home-assistant',
     name: 'On-Demand Home Assistant',
     description: 'Professional household help for cleaning, events, and parties. Perfect for everyday tasks and special occasions.',
@@ -125,7 +237,6 @@ export const services: Service[] = [
           'Party helper and event assistant for general tasks',
           'Preparing snacks, managing buffet, and clearing plates',
           'On-demand waitstaff for serving appetizers and dining area',
-          'Private bartender for bar setup, mixing drinks, and guest serving',
           'Post-party cleanup crew for morning-after mess handling'
         ],
         notIncluded: [

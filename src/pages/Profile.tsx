@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Phone, ChevronRight, LogOut, Bell, Shield, HelpCircle, CreditCard as Edit2, X, Check } from 'lucide-react';
+import { Mail, Phone, MapPin, ChevronRight, LogOut, Shield, HelpCircle, CreditCard as Edit2, X, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import NotificationsPanel from '../components/profile/NotificationsPanel';
+import { BANGALORE_LOCATIONS } from '../types';
 import HelpSupportPanel from '../components/profile/HelpSupportPanel';
 import PrivacySecurityPanel from '../components/profile/PrivacySecurityPanel';
 
-type ActivePanel = 'notifications' | 'help' | 'privacy' | null;
+type ActivePanel = 'help' | 'privacy' | null;
 
 const Profile = () => {
   const { user, profile, signOut, updateProfile } = useAuth();
@@ -17,6 +17,9 @@ const Profile = () => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
   const [fullName, setFullName] = useState('');
+  const [isEditingAddress, setIsEditingAddress] = useState(false);
+  const [savedLocation, setSavedLocation] = useState('');
+  const [savedAddress, setSavedAddress] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -27,6 +30,8 @@ const Profile = () => {
     if (profile) {
       setPhoneNumber(profile.phone || '');
       setFullName(profile.full_name || '');
+      setSavedLocation(profile.location || '');
+      setSavedAddress(profile.address || '');
     }
     if (user) {
       fetchBookingStats();
@@ -108,13 +113,40 @@ const Profile = () => {
     }
   };
 
+  const handleSaveAddress = async () => {
+    if (!savedLocation) {
+      setError('Please select an area');
+      return;
+    }
+    if (!savedAddress.trim() || savedAddress.trim().length < 10) {
+      setError('Please enter a complete address (minimum 10 characters)');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    setSuccessMessage('');
+
+    try {
+      const { error: updateError } = await updateProfile({ location: savedLocation, address: savedAddress.trim() });
+      if (updateError) throw new Error(updateError.message);
+
+      setIsEditingAddress(false);
+      setSuccessMessage('Address updated successfully');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err: any) {
+      setError(`Failed to update address: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleLogout = async () => {
     await signOut();
     navigate('/login', { replace: true });
   };
 
   const menuItems = [
-    { icon: Bell, label: 'Notifications', description: 'Manage your alerts', onClick: () => setActivePanel('notifications') },
     { icon: Shield, label: 'Privacy & Security', description: 'Account protection', onClick: () => setActivePanel('privacy') },
     { icon: HelpCircle, label: 'Help & Support', description: 'Get assistance', onClick: () => setActivePanel('help') },
   ];
@@ -241,6 +273,78 @@ const Profile = () => {
               </>
             )}
           </div>
+          {/* Address section */}
+          <div className="flex items-start space-x-3">
+            {isEditingAddress ? (
+              <div className="flex-1 space-y-3">
+                <div className="flex items-center gap-2">
+                  <MapPin size={20} className="text-gray-400 flex-shrink-0 mt-2" />
+                  <select
+                    value={savedLocation}
+                    onChange={(e) => setSavedLocation(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  >
+                    <option value="">Select your area</option>
+                    {BANGALORE_LOCATIONS.map((loc) => (
+                      <option key={loc} value={loc}>{loc}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="ml-7">
+                  <textarea
+                    value={savedAddress}
+                    onChange={(e) => setSavedAddress(e.target.value)}
+                    rows={3}
+                    placeholder="House/Flat number, Building name, Street, Landmark..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm resize-none"
+                  />
+                </div>
+                <div className="flex gap-2 ml-7">
+                  <button
+                    onClick={handleSaveAddress}
+                    disabled={saving}
+                    className="flex items-center gap-1 px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm"
+                  >
+                    <Check size={16} />
+                    Save
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsEditingAddress(false);
+                      setSavedLocation(profile.location || '');
+                      setSavedAddress(profile.address || '');
+                      setError('');
+                    }}
+                    className="flex items-center gap-1 px-3 py-1 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
+                  >
+                    <X size={16} />
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <MapPin size={20} className="text-gray-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  {profile.location || profile.address ? (
+                    <div>
+                      {profile.location && <p className="text-gray-700 text-sm font-medium">{profile.location}</p>}
+                      {profile.address && <p className="text-gray-600 text-sm mt-0.5">{profile.address}</p>}
+                    </div>
+                  ) : (
+                    <span className="text-gray-400 text-sm italic">No saved address</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setIsEditingAddress(true)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors ml-auto"
+                >
+                  <Edit2 size={18} className="text-gray-400" />
+                </button>
+              </>
+            )}
+          </div>
+
           {!profile.phone && !successMessage && (
             <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded-lg text-sm">
               Please add your phone number to complete bookings
@@ -324,9 +428,6 @@ const Profile = () => {
         <p className="mt-1">Premium Home Services</p>
       </div>
 
-      {activePanel === 'notifications' && (
-        <NotificationsPanel onClose={() => setActivePanel(null)} />
-      )}
       {activePanel === 'help' && (
         <HelpSupportPanel onClose={() => setActivePanel(null)} />
       )}

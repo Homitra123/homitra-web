@@ -1,10 +1,13 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Calendar as CalendarIcon, Clock, ChefHat, MapPin, ChevronDown, ChevronUp } from 'lucide-react';
+import { saveBookingDraft, getBookingDraft } from '../lib/bookingSession';
+import { useAuth } from '../context/AuthContext';
+import { ArrowLeft, Calendar as CalendarIcon, Clock, ChefHat, MapPin, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
 import { TIME_SLOTS as GLOBAL_TIME_SLOTS, BANGALORE_LOCATIONS } from '../types';
 import { isTimeSlotDisabled } from '../lib/timeUtils';
 import { COOKING_PLANS, PlanId, getRotiQty, MEAL_FREQUENCY_LABELS } from '../data/cookingPlans';
 import PlanCard from '../components/cooking/PlanCard';
+import { useIntroOffer, INTRO_PRICE, INTRO_ELIGIBLE_COOKING_PLANS } from '../lib/useIntroOffer';
 import VegCustomizer from '../components/cooking/VegCustomizer';
 import NonVegCustomizer from '../components/cooking/NonVegCustomizer';
 import BitesCustomizer from '../components/cooking/BitesCustomizer';
@@ -33,34 +36,101 @@ const TIME_SLOTS = {
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
+const getTodayLocal = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const todayFormatted = getTodayLocal();
+const today = new Date(todayFormatted + 'T00:00:00');
+
+const restoreDateObj = (formatted: string): SelectedDate => ({
+  date: new Date(formatted + 'T00:00:00'),
+  formatted,
+});
+
 const CookingBooking = () => {
   const navigate = useNavigate();
 
-  const [selectedPlan, setSelectedPlan] = useState<PlanId | ''>('');
+  // Read draft once at init so state and customizer initialState both use the same values
+  const _initDraft = getBookingDraft('home-cooking');
+  const _d = _initDraft as Record<string, any> | null;
+
+  const [selectedPlan, setSelectedPlan] = useState<PlanId | ''>((_d?.selectedPlan as PlanId) || '');
   const [customizerPrice, setCustomizerPrice] = useState(0);
   const [customizerValid, setCustomizerValid] = useState(false);
   const [customizerSummary, setCustomizerSummary] = useState('');
-  const [customizerDetails, setCustomizerDetails] = useState<unknown>(null);
+  const [customizerDetails, setCustomizerDetails] = useState<unknown>(_d?.customizerDetails ?? null);
   const [showPriceBreakdown, setShowPriceBreakdown] = useState(false);
+  const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
 
-  const [bookingMode, setBookingMode] = useState<BookingMode>('single');
-  const [selectedTimeCategory, setSelectedTimeCategory] = useState<TimeCategory>('evening');
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState('');
-  const [selectedDate, setSelectedDate] = useState<SelectedDate | null>(null);
-  const [selectedDates, setSelectedDates] = useState<SelectedDate[]>([]);
-  const [startDate, setStartDate] = useState<SelectedDate | null>(null);
-  const [endDate, setEndDate] = useState<SelectedDate | null>(null);
-  const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([]);
+  const [bookingMode, setBookingMode] = useState<BookingMode>((_d?.bookingMode as BookingMode) || 'single');
+  const [selectedTimeCategory, setSelectedTimeCategory] = useState<TimeCategory>((_d?.selectedTimeCategory as TimeCategory) || 'evening');
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>(_d?.selectedTimeSlot || '');
+  const [selectedDate, setSelectedDate] = useState<SelectedDate | null>(
+    _d?.selectedDate ? restoreDateObj((_d.selectedDate as { formatted: string }).formatted) : { date: today, formatted: todayFormatted }
+  );
+  const [selectedDates, setSelectedDates] = useState<SelectedDate[]>(
+    _d?.selectedDates ? (_d.selectedDates as { formatted: string }[]).map(d => restoreDateObj(d.formatted)) : []
+  );
+  const [startDate, setStartDate] = useState<SelectedDate | null>(
+    _d?.startDate ? restoreDateObj((_d.startDate as { formatted: string }).formatted) : null
+  );
+  const [endDate, setEndDate] = useState<SelectedDate | null>(
+    _d?.endDate ? restoreDateObj((_d.endDate as { formatted: string }).formatted) : null
+  );
+  const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>((_d?.selectedWeekdays as number[]) || []);
   const [showMoreSlots, setShowMoreSlots] = useState(false);
-  const [flexibleBookings, setFlexibleBookings] = useState<FlexibleBooking[]>([]);
+  const [flexibleBookings, setFlexibleBookings] = useState<FlexibleBooking[]>(
+    _d?.flexibleBookings
+      ? (_d.flexibleBookings as { id: string; formatted: string; timeSlot: string }[]).map(b => ({
+          ...b,
+          date: new Date(b.formatted + 'T00:00:00'),
+        }))
+      : []
+  );
   const [tempFlexibleDate, setTempFlexibleDate] = useState<SelectedDate | null>(null);
   const [tempFlexibleTime, setTempFlexibleTime] = useState('');
-  const [selectedLocation, setSelectedLocation] = useState('');
-  const [address, setAddress] = useState('');
+  const [selectedLocation, setSelectedLocation] = useState<string>(_d?.selectedLocation || '');
+  const [address, setAddress] = useState<string>(_d?.address || '');
+
+  const { profile } = useAuth();
+
+  // Pre-fill address from saved profile when no draft exists
+  useEffect(() => {
+    if (_d) return;
+    if (profile?.location && !selectedLocation) setSelectedLocation(profile.location);
+    if (profile?.address && !address) setAddress(profile.address);
+  }, [profile?.id]);
 
   const isMonthly = selectedPlan === 'monthly';
+  const introOffer = useIntroOffer();
 
-  const formatDate = (date: Date) => date.toISOString().split('T')[0];
+  // Check if the intro offer would apply given current customizer state
+  const introAppliesNow = (() => {
+    if (!introOffer.isActive || introOffer.slotsRemaining === 0) return false;
+    if (!INTRO_ELIGIBLE_COOKING_PLANS.has(selectedPlan)) return false;
+    if (bookingMode !== 'single') return false;
+    const details = customizerDetails as any;
+    if (!details) return false;
+    const people = details.people ?? 1;
+    if (people > 2) return false;
+    if ((details.extraRotisCount ?? 0) > 0) return false;
+    if (details.addExtraVeg || details.addExtraNonVeg) return false;
+    return true;
+  })();
+
+  const displayPrice = introAppliesNow ? INTRO_PRICE : customizerPrice;
+
+  const formatDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   const getDateDisplay = (date: Date) => ({
     day: date.getDate(),
@@ -68,11 +138,11 @@ const CookingBooking = () => {
   });
 
   const generateCalendarDays = () => {
-    const today = new Date();
+    const now = new Date();
     const days: Date[] = [];
     for (let i = 0; i < 30; i++) {
-      const d = new Date(today);
-      d.setDate(today.getDate() + i);
+      const d = new Date(now);
+      d.setDate(now.getDate() + i);
       days.push(d);
     }
     return days;
@@ -88,20 +158,20 @@ const CookingBooking = () => {
   }, {} as Record<string, Date[]>);
 
   const generateWeekAlignedCalendar = () => {
-    const today = new Date();
+    const now = new Date();
     const calData: { month: string; weeks: (Date | null)[][] }[] = [];
-    const rangeEnd = new Date(today);
-    rangeEnd.setDate(today.getDate() + 60);
+    const rangeEnd = new Date(now);
+    rangeEnd.setDate(now.getDate() + 60);
 
-    let currentMonth = today.getMonth();
+    let currentMonth = now.getMonth();
     let monthWeeks: (Date | null)[][] = [];
     let currentWeek: (Date | null)[] = [];
 
-    const firstDay = today.getDay();
+    const firstDay = now.getDay();
     const offset = firstDay === 0 ? 6 : firstDay - 1;
     for (let i = 0; i < offset; i++) currentWeek.push(null);
 
-    let cur = new Date(today);
+    let cur = new Date(now);
     while (cur <= rangeEnd) {
       if (cur.getMonth() !== currentMonth) {
         while (currentWeek.length < 7) currentWeek.push(null);
@@ -173,6 +243,7 @@ const CookingBooking = () => {
     const formatted = formatDate(date);
     if (bookingMode === 'single') {
       setSelectedDate({ date, formatted });
+      setSelectedTimeSlot('');
     } else if (bookingMode === 'custom') {
       if (selectedWeekdays.length === 0) return;
       if (!startDate) {
@@ -208,7 +279,7 @@ const CookingBooking = () => {
 
   const handleModeChange = (mode: BookingMode) => {
     setBookingMode(mode);
-    setSelectedDate(null);
+    setSelectedDate({ date: today, formatted: todayFormatted });
     setSelectedDates([]);
     setStartDate(null);
     setEndDate(null);
@@ -216,6 +287,7 @@ const CookingBooking = () => {
     setFlexibleBookings([]);
     setTempFlexibleDate(null);
     setTempFlexibleTime('');
+    setSelectedTimeSlot('');
   };
 
   const handleFlexibleDateClick = (date: Date) => {
@@ -264,6 +336,19 @@ const CookingBooking = () => {
     []
   );
 
+  // Progressive unlock helpers
+  const hasDateSelected = () => {
+    if (bookingMode === 'flexible') return true;
+    if (bookingMode === 'single') return selectedDate !== null;
+    if (bookingMode === 'custom') return selectedDates.length > 0;
+    return selectedDate !== null;
+  };
+
+  const hasTimeSelected = () => {
+    if (bookingMode === 'flexible') return true;
+    return !!selectedTimeSlot;
+  };
+
   const isScheduleValid = () => {
     if (!selectedLocation || !address.trim()) return false;
     if (isMonthly) {
@@ -277,16 +362,38 @@ const CookingBooking = () => {
 
   const isFormValid = () => customizerValid && isScheduleValid();
 
+  // Collect missing mandatory fields for the error banner
+  const getMissingFields = (): string[] => {
+    const missing: string[] = [];
+    if (!customizerValid) {
+      if (selectedPlan === 'veg') missing.push('Vegetable not selected');
+      else if (selectedPlan === 'nonveg') missing.push('Non-veg item not selected');
+      else if (selectedPlan === 'bites') missing.push('Dish and/or Beverage not selected');
+      else if (selectedPlan === 'monthly') missing.push('Meal frequency not selected');
+    }
+    if (bookingMode !== 'flexible') {
+      if (bookingMode === 'single' && !selectedDate) missing.push('Date not selected');
+      if (bookingMode === 'custom' && selectedDates.length === 0) missing.push('Date range not selected');
+      if (!selectedTimeSlot) missing.push('Start time not selected');
+    } else {
+      if (flexibleBookings.length === 0) missing.push('No bookings added');
+    }
+    if (!selectedLocation) missing.push('Service area not selected');
+    if (!address.trim()) missing.push('Complete address not provided');
+    return missing;
+  };
+
   const handleSelectPlan = (planId: string) => {
     setSelectedPlan(planId as PlanId);
     setBookingMode('single');
-    setSelectedDate(null);
+    setSelectedDate({ date: today, formatted: todayFormatted });
     setSelectedDates([]);
     setStartDate(null);
     setEndDate(null);
     setSelectedWeekdays([]);
     setFlexibleBookings([]);
     setSelectedTimeSlot('');
+    setHasAttemptedSubmit(false);
   };
 
   const handleBack = () => {
@@ -295,13 +402,17 @@ const CookingBooking = () => {
       setCustomizerPrice(0);
       setCustomizerValid(false);
       setCustomizerSummary('');
+      setHasAttemptedSubmit(false);
     } else {
       navigate(-1);
     }
   };
 
   const handleCheckout = () => {
-    if (!isFormValid()) return;
+    if (!isFormValid()) {
+      setHasAttemptedSubmit(true);
+      return;
+    }
     const plan = COOKING_PLANS.find(p => p.id === selectedPlan);
     const visitCount = getVisitCount();
     const bookingData = {
@@ -325,8 +436,28 @@ const CookingBooking = () => {
         ...( customizerDetails as object ?? {} ),
       },
     };
+    // Save draft so the user can return to this page with all selections intact
+    saveBookingDraft('home-cooking', {
+      selectedPlan,
+      bookingMode,
+      selectedTimeCategory,
+      selectedTimeSlot,
+      selectedDate: selectedDate ? { formatted: selectedDate.formatted } : null,
+      selectedDates: selectedDates.map(d => ({ formatted: d.formatted })),
+      startDate: startDate ? { formatted: startDate.formatted } : null,
+      endDate: endDate ? { formatted: endDate.formatted } : null,
+      selectedWeekdays,
+      flexibleBookings: flexibleBookings.map(b => ({ id: b.id, formatted: b.formatted, timeSlot: b.timeSlot })),
+      selectedLocation,
+      address,
+      customizerDetails: { plan: selectedPlan, ...( customizerDetails as object ?? {} ) },
+    });
     navigate('/checkout', { state: { bookingData } });
   };
+
+  const dateUnlocked = customizerValid;
+  const timeUnlocked = customizerValid && hasDateSelected();
+  const locationUnlocked = customizerValid && hasDateSelected() && hasTimeSelected();
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -356,12 +487,30 @@ const CookingBooking = () => {
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:[grid-template-rows:auto_auto_auto_auto]">
                 {COOKING_PLANS.slice(0, 2).map(plan => (
-                  <PlanCard key={plan.id} plan={plan} onSelect={handleSelectPlan} />
+                  <PlanCard
+                    key={plan.id}
+                    plan={plan}
+                    onSelect={handleSelectPlan}
+                    showIntroBadge={
+                      introOffer.isActive &&
+                      introOffer.slotsRemaining > 0 &&
+                      introOffer.isEligibleCookingPlan(plan.id, 'single')
+                    }
+                  />
                 ))}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:[grid-template-rows:auto_auto_auto_auto]">
                 {COOKING_PLANS.slice(2, 4).map(plan => (
-                  <PlanCard key={plan.id} plan={plan} onSelect={handleSelectPlan} />
+                  <PlanCard
+                    key={plan.id}
+                    plan={plan}
+                    onSelect={handleSelectPlan}
+                    showIntroBadge={
+                      introOffer.isActive &&
+                      introOffer.slotsRemaining > 0 &&
+                      introOffer.isEligibleCookingPlan(plan.id, 'single')
+                    }
+                  />
                 ))}
               </div>
             </div>
@@ -391,6 +540,7 @@ const CookingBooking = () => {
               <h2 className="text-base font-bold text-gray-900 mb-5">Meal Customisation</h2>
               {selectedPlan === 'veg' && (
                 <VegCustomizer
+                  initialState={_d?.customizerDetails as any}
                   onChange={(state, price, isValid) => {
                     const rotiQty = getRotiQty(state.people);
                     const label = `${state.people} ${state.people === 1 ? 'person' : 'people'}`;
@@ -408,6 +558,7 @@ const CookingBooking = () => {
               )}
               {selectedPlan === 'nonveg' && (
                 <NonVegCustomizer
+                  initialState={_d?.customizerDetails as any}
                   onChange={(state, price, isValid) => {
                     const rotiQty = getRotiQty(state.people);
                     const label = `${state.people} ${state.people === 1 ? 'person' : 'people'}`;
@@ -425,6 +576,7 @@ const CookingBooking = () => {
               )}
               {selectedPlan === 'bites' && (
                 <BitesCustomizer
+                  initialState={_d?.customizerDetails as any}
                   onChange={(state, price, isValid) => {
                     const label = `${state.people} ${state.people === 1 ? 'person' : 'people'}`;
                     const mainDish =
@@ -441,6 +593,7 @@ const CookingBooking = () => {
               )}
               {selectedPlan === 'monthly' && (
                 <MonthlyCustomizer
+                  initialState={_d?.customizerDetails as any}
                   onChange={(state, price, isValid) => {
                     const label = `${state.people} ${state.people === 1 ? 'person' : 'people'}`;
                     const freq = MEAL_FREQUENCY_LABELS[state.mealFrequency];
@@ -456,8 +609,17 @@ const CookingBooking = () => {
               )}
             </div>
 
+            {/* Date/Time/Mode section */}
             {!isMonthly && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+              <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6 transition-opacity duration-200 ${!dateUnlocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                {!dateUnlocked && (
+                  <div className="px-6 pt-4 pb-0">
+                    <p className="text-xs text-amber-600 font-medium flex items-center gap-1">
+                      <AlertCircle size={13} />
+                      Complete meal customisation above first
+                    </p>
+                  </div>
+                )}
                 <div className="grid grid-cols-3 border-b border-gray-200">
                   {(
                     [
@@ -504,7 +666,9 @@ const CookingBooking = () => {
 
                     {selectedWeekdays.length > 0 && (
                       <>
-                        <h3 className="text-base font-semibold text-gray-900 mb-3">Dates</h3>
+                        <h3 className="text-base font-semibold text-gray-900 mb-3">
+                          Select Date Range <span className="text-red-500">*</span>
+                        </h3>
                         <div className="flex items-center gap-2 mb-4">
                           <div className={`flex-1 px-4 py-3 rounded-lg text-center font-medium text-sm ${startDate ? 'bg-gradient-to-br from-orange-500 to-orange-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
                             {startDate ? startDate.date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' }) : 'Start Date'}
@@ -662,9 +826,9 @@ const CookingBooking = () => {
 
                 {bookingMode !== 'custom' && bookingMode !== 'flexible' && (
                   <div className="p-6">
-                    {bookingMode === 'single' && (
-                      <h3 className="text-base font-semibold text-gray-900 mb-3">Select Date</h3>
-                    )}
+                    <h3 className="text-base font-bold text-gray-900 mb-3">
+                      Select Date <span className="text-red-500 font-bold">*</span>
+                    </h3>
 
                     {Object.entries(groupedByMonth).map(([month, dates]) => (
                       <div key={month} className="mb-4">
@@ -699,8 +863,16 @@ const CookingBooking = () => {
             )}
 
             {isMonthly && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-                <h3 className="text-base font-semibold text-gray-900 mb-3">Subscription Start Date</h3>
+              <div className={`bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 transition-opacity duration-200 ${!dateUnlocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                {!dateUnlocked && (
+                  <p className="text-xs text-amber-600 font-medium flex items-center gap-1 mb-3">
+                    <AlertCircle size={13} />
+                    Complete meal customisation above first
+                  </p>
+                )}
+                <h3 className="text-base font-bold text-gray-900 mb-3">
+                  Subscription Start Date <span className="text-red-500 font-bold">*</span>
+                </h3>
                 {Object.entries(groupedByMonth).map(([month, dates]) => (
                   <div key={month} className="mb-4">
                     <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">{month}</h4>
@@ -730,9 +902,15 @@ const CookingBooking = () => {
             )}
 
             {bookingMode !== 'flexible' && (
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
-                <h3 className="text-base font-semibold text-gray-900 mb-4">
-                  {isMonthly ? 'Preferred Cook Start Time' : 'Start Time'}
+              <div className={`bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 transition-opacity duration-200 ${!timeUnlocked ? 'opacity-50 pointer-events-none' : ''}`}>
+                {!timeUnlocked && (
+                  <p className="text-xs text-amber-600 font-medium flex items-center gap-1 mb-3">
+                    <AlertCircle size={13} />
+                    {!dateUnlocked ? 'Complete meal customisation above first' : 'Select a date above first'}
+                  </p>
+                )}
+                <h3 className="text-base font-bold text-gray-900 mb-4">
+                  {isMonthly ? 'Preferred Cook Start Time' : 'Start Time'} <span className="text-red-500 font-bold">*</span>
                 </h3>
                 <div className="flex gap-2 mb-4">
                   {(['morning', 'afternoon', 'evening'] as TimeCategory[]).map(cat => (
@@ -786,12 +964,18 @@ const CookingBooking = () => {
               </div>
             )}
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+            <div className={`bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 transition-opacity duration-200 ${!locationUnlocked ? 'opacity-50 pointer-events-none' : ''}`}>
+              {!locationUnlocked && (
+                <p className="text-xs text-amber-600 font-medium flex items-center gap-1 mb-3">
+                  <AlertCircle size={13} />
+                  {!dateUnlocked ? 'Complete meal customisation above first' : !hasDateSelected() ? 'Select a date above first' : 'Select a start time above first'}
+                </p>
+              )}
               <h3 className="text-base font-semibold text-gray-900 mb-4">Service Location</h3>
               <div className="mb-4">
-                <label className="flex items-center text-sm font-medium text-gray-700 mb-2">
+                <label className="flex items-center text-sm font-bold text-gray-800 mb-2">
                   <MapPin size={16} className="mr-1 text-orange-600" />
-                  Bangalore Area
+                  Bangalore Area <span className="text-red-500 ml-1 font-bold">*</span>
                 </label>
                 <select
                   value={selectedLocation}
@@ -805,7 +989,9 @@ const CookingBooking = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Complete Address</label>
+                <label className="block text-sm font-bold text-gray-800 mb-2">
+                  Complete Address <span className="text-red-500 font-bold">*</span>
+                </label>
                 <textarea
                   value={address}
                   onChange={e => setAddress(e.target.value)}
@@ -841,7 +1027,28 @@ const CookingBooking = () => {
               <div className="pb-3 text-sm border-t border-gray-100 pt-2 space-y-1">
                 <div className="flex justify-between text-gray-600">
                   <span>Plan Total</span>
-                  <span className="font-semibold text-gray-900">₹{customizerPrice.toLocaleString()}</span>
+                  <div className="flex items-baseline gap-2">
+                    {introAppliesNow && (
+                      <span className="text-xs text-gray-400 line-through">₹{customizerPrice.toLocaleString()}</span>
+                    )}
+                    <span className="font-semibold text-gray-900">₹{displayPrice.toLocaleString()}</span>
+                  </div>
+                </div>
+                {introAppliesNow && (
+                  <div className="text-xs text-amber-700 font-semibold">Introductory offer applied</div>
+                )}
+              </div>
+            )}
+
+            {!isFormValid() && getMissingFields().length > 0 && (
+              <div className="pb-2 border-t border-red-100 pt-2">
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {getMissingFields().map((field, i) => (
+                    <span key={i} className="flex items-center gap-1 text-xs text-red-600 font-medium">
+                      <AlertCircle size={11} />
+                      {field}
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
@@ -849,14 +1056,23 @@ const CookingBooking = () => {
             <div className="pb-4 flex items-center justify-between gap-4">
               <div>
                 <div className="text-xs text-gray-500 font-medium">Total</div>
-                <div className="text-xl font-bold text-orange-600">
-                  ₹{customizerPrice > 0 ? customizerPrice.toLocaleString() : '—'}
+                <div className="flex items-baseline gap-2">
+                  {introAppliesNow && customizerPrice > 0 && (
+                    <span className="text-sm text-gray-400 line-through">₹{customizerPrice.toLocaleString()}</span>
+                  )}
+                  <div className="text-xl font-bold text-orange-600">
+                    ₹{customizerPrice > 0 ? displayPrice.toLocaleString() : '—'}
+                  </div>
                 </div>
               </div>
               <button
                 onClick={handleCheckout}
-                disabled={!isFormValid()}
-                className="flex-1 max-w-xs bg-gray-900 hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 shadow-sm"
+                disabled={false}
+                className={`flex-1 max-w-xs font-semibold py-3 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 shadow-sm ${
+                  isFormValid()
+                    ? 'bg-gray-900 hover:bg-gray-800 text-white'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
               >
                 <span>Proceed to Pay</span>
                 <span className="text-base">→</span>

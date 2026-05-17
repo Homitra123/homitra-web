@@ -1,12 +1,13 @@
-import { Check } from 'lucide-react';
+import { Check, Zap } from 'lucide-react';
 import { CookingPlan } from '../../data/cookingPlans';
 
 interface PlanCardProps {
   plan: CookingPlan;
   onSelect: (planId: string) => void;
+  showIntroBadge?: boolean;
 }
 
-const PlanCard = ({ plan, onSelect }: PlanCardProps) => {
+const PlanCard = ({ plan, onSelect, showIntroBadge }: PlanCardProps) => {
   return (
     <button
       onClick={() => onSelect(plan.id)}
@@ -27,7 +28,14 @@ const PlanCard = ({ plan, onSelect }: PlanCardProps) => {
         </div>
       )}
 
-      <div className="px-6 pt-7 pb-4">
+      {showIntroBadge && (
+        <div className="absolute top-3 right-3 z-10 flex items-center gap-1 intro-badge-glow text-amber-950 text-[11px] font-bold px-2 py-0.5 rounded-full">
+          <Zap size={10} className="fill-amber-950" strokeWidth={0} />
+          ₹99 Intro Price for 2 People
+        </div>
+      )}
+
+      <div className={`px-6 pb-4 ${showIntroBadge ? 'pt-12' : 'pt-7'}`}>
         <h3 className="text-lg font-bold text-gray-900 mb-1 leading-snug">{plan.name}</h3>
         <p className="text-sm text-orange-600 font-medium">{plan.tagline}</p>
       </div>

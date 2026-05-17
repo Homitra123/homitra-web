@@ -38,7 +38,34 @@ const ServiceDetailsModal = ({ isOpen, onClose, tier, serviceName }: ServiceDeta
             <p className="text-gray-600">{serviceName}</p>
           </div>
 
-          {tier.included && tier.included.length > 0 && (
+          {tier.includedGroups && tier.includedGroups.length > 0 && (
+            <div className="mb-8">
+              <h3 className="text-lg font-bold text-gray-900 mb-5">
+                What's included
+              </h3>
+              <div className="space-y-6">
+                {tier.includedGroups.map((group, gi) => (
+                  <div key={gi}>
+                    <p className="font-semibold text-gray-900 mb-3">{group.heading}</p>
+                    <div className="space-y-2.5 pl-1">
+                      {group.items.map((item, ii) => (
+                        <div key={ii} className="flex items-start gap-3">
+                          <div className="mt-0.5 flex-shrink-0">
+                            <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
+                              <Check size={12} className="text-white" strokeWidth={3} />
+                            </div>
+                          </div>
+                          <p className="text-gray-700 leading-relaxed text-sm">{item}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!tier.includedGroups && tier.included && tier.included.length > 0 && (
             <div className="mb-8">
               <h3 className="text-lg font-bold text-gray-900 mb-4">
                 The expert is trained to

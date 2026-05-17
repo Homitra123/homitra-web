@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, useLocation, Link } from 'react-router-dom';
 import { CheckCircle, Calendar, Clock, MapPin, IndianRupee, ArrowRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { clearBookingDraft } from '../lib/bookingSession';
 
 interface BookingDetails {
   id: string;
@@ -20,8 +21,17 @@ const BookingSuccess = () => {
   const [loading, setLoading] = useState(true);
 
   const bookingId =
-    (location.state as { bookingId?: string })?.bookingId ||
+    (location.state as { bookingId?: string; serviceId?: string })?.bookingId ||
     searchParams.get('booking_id');
+  const serviceId = (location.state as { serviceId?: string })?.serviceId;
+
+  // Clear draft for the completed service so a fresh booking starts clean
+  useEffect(() => {
+    const idsToClean = serviceId
+      ? [serviceId]
+      : ['home-cooking', 'car-cleaning', 'home-cleaning', 'pest-control', 'deep-bathroom-cleaning', 'premier-housekeep'];
+    idsToClean.forEach(id => clearBookingDraft(id));
+  }, []);
 
   useEffect(() => {
     const load = async () => {

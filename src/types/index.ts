@@ -16,6 +16,11 @@ export interface Service {
   pricingTiers: PricingTier[];
 }
 
+export interface IncludedGroup {
+  heading: string;
+  items: string[];
+}
+
 export interface PricingTier {
   id: string;
   name: string;
@@ -24,6 +29,7 @@ export interface PricingTier {
   description?: string;
   features: string[];
   included?: string[];
+  includedGroups?: IncludedGroup[];
   notIncluded?: string[];
 }
 
@@ -59,11 +65,21 @@ export const BANGALORE_LOCATIONS = [
   'Others'
 ] as const;
 
+export const HOUSEKEEP_DURATIONS = [
+  { hours: 2, label: '2 Hours', price: 249 },
+  { hours: 3, label: '3 Hours', price: 299 },
+  { hours: 4, label: '4 Hours', price: 399 },
+  { hours: 5, label: '5 Hours', price: 499 },
+] as const;
+
 export const DURATIONS = [
-  { minutes: 60, label: '60 min', price: 199, originalPrice: 299, discount: 33 },
-  { minutes: 90, label: '90 min', price: 249, originalPrice: 374, discount: 33 },
-  { minutes: 120, label: '2 hrs', price: 299, originalPrice: 449, discount: 33 },
-  { minutes: 150, label: '2.5 hrs', price: 349, originalPrice: 524, discount: 33 },
+  { minutes: 60, label: '60 Mins', price: 199, originalPrice: 299, discount: 33 },
+  { minutes: 90, label: '90 Mins', price: 249, originalPrice: 374, discount: 33 },
+  { minutes: 120, label: '2 Hours', price: 299, originalPrice: 449, discount: 33 },
+  { minutes: 150, label: '2.5 Hours', price: 349, originalPrice: 524, discount: 33 },
+  { minutes: 240, label: '4 Hours', price: 499, originalPrice: 749, discount: 33 },
+  { minutes: 360, label: '6 Hours', price: 699, originalPrice: 1049, discount: 33 },
+  { minutes: 480, label: '8 Hours', price: 799, originalPrice: 1199, discount: 33 },
 ] as const;
 
 export const TIME_PERIODS = ['Morning', 'Afternoon', 'Evening'] as const;
