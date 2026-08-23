@@ -63,6 +63,9 @@ const Home = () => {
       </Link>
 
       <div className="mb-6">
+        <div className="mb-3 inline-flex items-center rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">
+          Soon to be launched
+        </div>
         <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-6">Our Services</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {services.map((service) => {

@@ -30,6 +30,20 @@ async function dbQueryMany(url: string, key: string, table: string, filter: stri
   return Array.isArray(rows) ? rows : [];
 }
 
+async function dbInsert(url: string, key: string, table: string, data: object) {
+  const res = await fetch(`${url}/rest/v1/${table}`, {
+    method: "POST",
+    headers: {
+      "apikey": key,
+      "Authorization": `Bearer ${key}`,
+      "Content-Type": "application/json",
+      "Prefer": "return=minimal",
+    },
+    body: JSON.stringify(data),
+  });
+  return res;
+}
+
 function formatDateTime(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleString("en-IN", {
@@ -53,14 +67,6 @@ Deno.serve(async (req: Request) => {
     const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
     const ADMIN_EMAIL = Deno.env.get("ADMIN_EMAIL") || "homitra.services@gmail.com";
 
-    if (!RESEND_API_KEY) {
-      console.error("[food-notification] RESEND_API_KEY not set");
-      return new Response(JSON.stringify({ success: true }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     const order = await dbQuery(SUPABASE_URL, SERVICE_KEY, "food_orders", `id=eq.${order_id}`);
     if (!order) {
       console.error("[food-notification] order not found:", order_id);
@@ -78,6 +84,11 @@ Deno.serve(async (req: Request) => {
     const customerPhone = profile?.phone || "N/A";
     const orderRef = order_id.slice(0, 8).toUpperCase();
     const orderTime = formatDateTime(order.created_at);
+
+    const paymentLabel = order.payment_method === "cod"
+      ? "Cash on Delivery"
+      : `Online (Razorpay)`;
+    const paymentIdLine = order.payment_id ? ` &nbsp;·&nbsp; Payment ID: ${order.payment_id}` : "";
 
     const tr = `style="border-bottom:1px solid #e5e7eb"`;
     const trAlt = `style="border-bottom:1px solid #e5e7eb;background:#f9fafb"`;
@@ -104,10 +115,18 @@ Deno.serve(async (req: Request) => {
         <div style="border-top:2px solid #1e40af;margin-bottom:0"></div>
         <table style="border-collapse:collapse;width:100%;margin-bottom:20px">
           ${itemRows}
+          <tr ${tr}><td ${td1}>Subtotal</td><td ${td2}>Rs. ${order.subtotal ?? order.total_amount}</td></tr>
+          <tr ${trAlt}><td ${td1}>Delivery Fee</td><td ${td2}>Rs. ${order.delivery_fee ?? 0}</td></tr>
           <tr style="border-top:2px solid #1e40af">
-            <td style="padding:10px 14px;font-weight:700;font-size:14px;color:#111827">Total (COD)</td>
+            <td style="padding:10px 14px;font-weight:700;font-size:14px;color:#111827">Total</td>
             <td style="padding:10px 14px;font-weight:700;font-size:16px;color:#1e40af">Rs. ${order.total_amount}</td>
           </tr>
+        </table>
+
+        <p style="color:#111827;font-weight:600;font-size:13px;margin:0 0 4px;letter-spacing:0.04em">Payment</p>
+        <div style="border-top:2px solid #1e40af;margin-bottom:0"></div>
+        <table style="border-collapse:collapse;width:100%;margin-bottom:20px">
+          <tr ${tr}><td ${td1}>Method</td><td ${td2}>${paymentLabel}${paymentIdLine}</td></tr>
         </table>
 
         <p style="color:#111827;font-weight:600;font-size:13px;margin:0 0 4px;letter-spacing:0.04em">Delivery Details</p>
@@ -115,7 +134,8 @@ Deno.serve(async (req: Request) => {
         <table style="border-collapse:collapse;width:100%;margin-bottom:20px">
           <tr ${tr}><td ${td1}>Area</td><td ${td2}>${order.location}</td></tr>
           <tr ${trAlt}><td ${td1}>Address</td><td ${td2}>${order.address}</td></tr>
-          ${order.special_instructions ? `<tr ${tr}><td ${td1}>Instructions</td><td ${td2}>${order.special_instructions}</td></tr>` : ""}
+          ${order.estimated_delivery_minutes ? `<tr ${tr}><td ${td1}>Est. Delivery</td><td ${td2}>${order.estimated_delivery_minutes} minutes</td></tr>` : ""}
+          ${order.special_instructions ? `<tr ${trAlt}><td ${td1}>Instructions</td><td ${td2}>${order.special_instructions}</td></tr>` : ""}
         </table>
 
         <p style="color:#111827;font-weight:600;font-size:13px;margin:0 0 4px;letter-spacing:0.04em">Customer Details</p>
@@ -130,21 +150,37 @@ Deno.serve(async (req: Request) => {
       </div>
     </div>`;
 
+    if (RESEND_API_KEY) {
+      try {
+        const emailRes = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from: "Homitra Orders <orders@homitra.co.in>",
+            to: [ADMIN_EMAIL],
+            subject: `New Food Order - #${orderRef} | Rs. ${order.total_amount}`,
+            html: adminHtml,
+          }),
+        });
+        const body = await emailRes.text();
+        console.log(`[food-notification] email status=${emailRes.status} body=${body}`);
+      } catch (e) {
+        console.error("[food-notification] email error:", e);
+      }
+    } else {
+      console.error("[food-notification] RESEND_API_KEY not set, skipping email");
+    }
+
+    // Insert in-app notification for the user
     try {
-      const emailRes = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          from: "Homitra Kitchen <orders@homitra.co.in>",
-          to: [ADMIN_EMAIL],
-          subject: `New Food Order - #${orderRef} | Rs. ${order.total_amount}`,
-          html: adminHtml,
-        }),
+      await dbInsert(SUPABASE_URL, SERVICE_KEY, "notifications", {
+        user_id: order.user_id,
+        title: "Order Confirmed!",
+        message: `Your food order #${orderRef} has been received. Estimated delivery: ${order.estimated_delivery_minutes ?? "N/A"} mins.`,
+        type: "food_order",
       });
-      const body = await emailRes.text();
-      console.log(`[food-notification] email status=${emailRes.status} body=${body}`);
     } catch (e) {
-      console.error("[food-notification] email error:", e);
+      console.error("[food-notification] notification insert error:", e);
     }
 
     return new Response(JSON.stringify({ success: true }), {
@@ -153,8 +189,8 @@ Deno.serve(async (req: Request) => {
     });
   } catch (error) {
     console.error("[food-notification] unhandled error:", error);
-    return new Response(JSON.stringify({ success: true }), {
-      status: 200,
+    return new Response(JSON.stringify({ error: (error as any).message }), {
+      status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
