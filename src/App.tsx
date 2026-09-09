@@ -19,6 +19,11 @@ import CloudKitchen from './pages/CloudKitchen';
 import FoodCheckout from './pages/FoodCheckout';
 import FoodOrderSuccess from './pages/FoodOrderSuccess';
 import FoodOrders from './pages/FoodOrders';
+import AdminLogin from './admin/pages/AdminLogin';
+import AdminLayout from './admin/AdminLayout';
+import AdminHome from './admin/pages/AdminHome';
+import StaffManagement from './admin/pages/StaffManagement';
+import RequireStaff from './admin/RequireStaff';
 
 function App() {
   return (
@@ -131,6 +136,27 @@ function App() {
                     </ProtectedRoute>
                   }
                 />
+
+                {/* Admin routes (additive, separate from customer app) */}
+                <Route path="/admin/login" element={<AdminLogin />} />
+                <Route
+                  path="/admin"
+                  element={
+                    <RequireStaff>
+                      <AdminLayout />
+                    </RequireStaff>
+                  }
+                >
+                  <Route index element={<AdminHome />} />
+                  <Route
+                    path="staff"
+                    element={
+                      <RequireStaff roles={['super_admin']}>
+                        <StaffManagement />
+                      </RequireStaff>
+                    }
+                  />
+                </Route>
               </Routes>
             </Router>
           </CartProvider>
