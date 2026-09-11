@@ -11,8 +11,8 @@ const AdminHome = () => {
           Admin Foundation Online
         </h1>
         <p className="text-slate-500 max-w-lg mx-auto mb-8">
-          The operator console is up and running. Additional modules â orders,
-          customers, finance, and more â will appear here as they are built.
+          The operator console is up and running. Additional modules — orders,
+          customers, finance, and more — will appear here as they are built.
         </p>
 
         <div className="flex items-center justify-center gap-2 text-slate-400 text-sm">
