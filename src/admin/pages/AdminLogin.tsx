@@ -71,6 +71,7 @@ const AdminLogin = () => {
       return;
     }
 
+    // Check MFA status
     const { data: factorsData, error: factorsError } =
       await supabase.auth.mfa.listFactors();
 
@@ -83,8 +84,10 @@ const AdminLogin = () => {
     const verifiedFactors = factorsData.totp.filter((f) => f.friendly_name);
 
     if (verifiedFactors.length === 0) {
+      // No factor enrolled — start enrollment
       await startEnrollment();
     } else {
+      // Has a verified factor — challenge it
       const factorId = verifiedFactors[0].id;
       setChallengeFactorId(factorId);
       setStep('mfa-verify');
@@ -202,7 +205,7 @@ const AdminLogin = () => {
             <ShieldCheck className="h-7 w-7 text-sky-400" />
           </div>
           <h1 className="text-2xl font-bold text-white mb-1">Homitra Admin</h1>
-          <p className="text-slate-400 text-sm">Secure operator access</span></p>
+          <p className="text-slate-400 text-sm">Secure operator access</p>
         </div>
 
         <div className="bg-slate-800 rounded-2xl border border-slate-700 p-8">
@@ -302,6 +305,61 @@ const AdminLogin = () => {
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
                     Verification code
+                  </label>
+                  <div className="relative">
+                    <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500" />
+                    <input
+                      type="text"
+                      value={verifyCode}
+                      onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      className="w-full pl-11 pr-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:ring-2 focus:ring-sky-500 focus:border-transparent tracking-widest text-center"
+                      placeholder="000000"
+                      maxLength={6}
+                    />
+                  </div>
+                </div>
+
+                {error && (
+                  <div className="bg-red-500/10 border border-red-500/30 text-red-300 px-4 py-3 rounded-lg text-sm">
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-sky-500 hover:bg-sky-600 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Verifying...' : 'Verify & Continue'}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {step === 'mfa-verify' && (
+            <div className="space-y-5">
+              <button
+                type="button"
+                onClick={resetToPassword}
+                className="flex items-center gap-2 text-slate-400 hover:text-slate-200 text-sm"
+              >
+                <ArrowLeft size={16} />
+                Back
+              </button>
+
+              <div>
+                <h3 className="text-lg font-semibold text-white mb-2">
+                  Two-factor authentication
+                </h3>
+                <p className="text-sm text-slate-400">
+                  Enter the 6-digit code from your authenticator app.
+                </p>
+              </div>
+
+              <form onSubmit={handleChallengeVerify} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    Authentication code
                   </label>
                   <div className="relative">
                     <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500" />
