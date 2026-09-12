@@ -76,6 +76,8 @@ const AdminOrders = () => {
     | { kind: 'order'; row: OrderRow; items: OrderItem[]; itemsLoading: boolean }
     | null
   >(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -168,6 +170,39 @@ const AdminOrders = () => {
       .eq('order_id', row.id);
     if (itemErr) console.error('[AdminOrders] items error', itemErr);
     setDetail({ kind: 'order', row, items: (data as OrderItem[]) || [], itemsLoading: false });
+  };
+
+  const updateStatus = async (kind: 'booking' | 'order', id: string, newStatus: string) => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const table = kind === 'booking' ? 'bookings' : 'food_orders';
+      const { error: upErr } = await supabase.from(table).update({ status: newStatus }).eq('id', id);
+      if (upErr) throw upErr;
+      // best-effort audit trail
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        await supabase.from('audit_logs').insert({
+          actor_email: user?.email ?? null,
+          action: kind === 'booking' ? 'booking.status_changed' : 'order.status_changed',
+          entity_type: table,
+          entity_id: id,
+          metadata: { status: newStatus },
+        });
+      } catch { /* audit is best-effort */ }
+      if (kind === 'booking') {
+        setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, status: newStatus } : b)));
+        setDetail((d) => (d && d.kind === 'booking' && d.row.id === id ? { ...d, row: { ...d.row, status: newStatus } } : d));
+      } else {
+        setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: newStatus } : o)));
+        setDetail((d) => (d && d.kind === 'order' && d.row.id === id ? { ...d, row: { ...d.row, status: newStatus } } : d));
+      }
+    } catch (e: any) {
+      console.error('[AdminOrders] status update failed', e);
+      setActionError(e?.message || 'Could not update status. You may not have permission.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const count = tab === 'bookings' ? filteredBookings.length : filteredOrders.length;
@@ -471,6 +506,33 @@ const AdminOrders = () => {
                   </div>
                 </div>
               )}
+
+              {/* Status actions */}
+              <div className="border-t border-slate-100 pt-4">
+                <p className="text-xs text-slate-400 mb-2">Update status</p>
+                {actionError && <p className="text-xs text-rose-600 mb-2">{actionError}</p>}
+                <div className="flex flex-wrap gap-2">
+                  {(detail.kind === 'booking'
+                    ? [['confirmed', 'Confirm'], ['in_progress', 'In progress'], ['completed', 'Complete'], ['cancelled', 'Cancel']]
+                    : [['completed', 'Complete'], ['cancelled', 'Cancel']]
+                  ).map(([val, label]) => {
+                    const isCurrent = (detail.row.status || '').toLowerCase() === val;
+                    const danger = val === 'cancelled';
+                    return (
+                      <button
+                        key={val}
+                        disabled={busy || isCurrent}
+                        onClick={() => updateStatus(detail.kind === 'booking' ? 'booking' : 'order', detail.row.id, val)}
+                        className={`text-sm font-medium px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                          danger ? 'border-rose-200 text-rose-600 hover:bg-rose-50' : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                        } ${isCurrent ? 'bg-slate-100' : ''}`}
+                      >
+                        {isCurrent ? '✓ ' + label : label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
               <div className="flex items-center justify-between border-t border-slate-100 pt-4">
                 <span className="text-xs text-slate-400">{formatDateTime(detail.row.created_at)}</span>
