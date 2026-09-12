@@ -22,6 +22,8 @@ import FoodOrders from './pages/FoodOrders';
 import AdminLogin from './admin/pages/AdminLogin';
 import AdminLayout from './admin/AdminLayout';
 import AdminHome from './admin/pages/AdminHome';
+import AdminOrders from './admin/pages/AdminOrders';
+import AdminCustomers from './admin/pages/AdminCustomers';
 import StaffManagement from './admin/pages/StaffManagement';
 import RequireStaff from './admin/RequireStaff';
 
@@ -148,6 +150,8 @@ function App() {
                   }
                 >
                   <Route index element={<AdminHome />} />
+                  <Route path="orders" element={<AdminOrders />} />
+                  <Route path="customers" element={<AdminCustomers />} />
                   <Route
                     path="staff"
                     element={
