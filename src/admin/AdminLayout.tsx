@@ -30,8 +30,8 @@ const AdminLayout = () => {
   const navItems: NavItem[] = [
     { label: 'Dashboard', path: '/admin', icon: LayoutDashboard, enabled: true },
     { label: 'Staff', path: '/admin/staff', icon: UserCog, enabled: true, roles: ['super_admin'] },
-    { label: 'Orders', path: '/admin/orders', icon: ShoppingBag, enabled: false },
-    { label: 'Customers', path: '/admin/customers', icon: Users, enabled: false },
+    { label: 'Orders', path: '/admin/orders', icon: ShoppingBag, enabled: true },
+    { label: 'Customers', path: '/admin/customers', icon: Users, enabled: true },
     { label: 'Finance', path: '/admin/finance', icon: Wallet, enabled: false },
   ];
 
