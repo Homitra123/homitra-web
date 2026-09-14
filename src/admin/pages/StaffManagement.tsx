@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { UserCog, UserPlus, Ban, CheckCircle, AlertCircle, X } from 'lucide-react';
+import { UserCog, UserPlus, Ban, CheckCircle, AlertCircle, X, RotateCcw } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { supabase, getSupabaseUrl, getSupabaseAnonKey } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase';
 import { StaffRole } from '../useStaff';
 
 interface StaffRow {
@@ -23,20 +23,9 @@ interface AuditRow {
   created_at: string;
 }
 
-const ROLE_OPTIONS: { value: StaffRole; label: string }[] = [
-  { value: 'super_admin', label: 'Super Admin' },
-  { value: 'admin', label: 'Admin' },
-  { value: 'ops', label: 'Operations' },
-  { value: 'support', label: 'Support' },
-  { value: 'finance', label: 'Finance' },
-  { value: 'marketing', label: 'Marketing' },
-  { value: 'engineer', label: 'Engineer' },
-  { value: 'read_only', label: 'Read Only' },
-];
-
 const addSchema = z.object({
   email: z.string().email('Enter a valid email'),
-  role: z.string().min(1, 'Select a role'),
+  full_name: z.string().optional(),
 });
 
 type AddValues = z.infer<typeof addSchema>;
@@ -59,7 +48,7 @@ const StaffManagement = () => {
     formState: { errors },
   } = useForm<AddValues>({
     resolver: zodResolver(addSchema),
-    defaultValues: { email: '', role: 'support' },
+    defaultValues: { email: '', full_name: '' },
   });
 
   const fetchStaff = useCallback(async () => {
@@ -67,7 +56,6 @@ const StaffManagement = () => {
       .from('staff_users')
       .select('user_id, full_name, role, status, created_at')
       .order('created_at', { ascending: false });
-
     if (error) {
       console.error('[StaffManagement] fetch staff error', error);
       return;
@@ -82,7 +70,6 @@ const StaffManagement = () => {
       .eq('entity_type', 'staff_users')
       .order('created_at', { ascending: false })
       .limit(20);
-
     if (error) {
       console.error('[StaffManagement] fetch audit error', error);
       return;
@@ -102,81 +89,85 @@ const StaffManagement = () => {
 
   const showToast = (type: 'success' | 'error', message: string) => {
     setToast({ type, message });
-    setTimeout(() => setToast(null), 4000);
+    setTimeout(() => setToast(null), 5000);
   };
 
-  const callEdgeFunction = async (payload: Record<string, unknown>) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) throw new Error('Not authenticated');
-
-    const response = await fetch(
-      `${getSupabaseUrl()}/functions/v1/admin-manage-staff`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
-          apikey: getSupabaseAnonKey(),
-        },
-        body: JSON.stringify(payload),
-      }
-    );
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result?.error ?? 'Request failed');
-    }
-    return result;
+  const writeAudit = async (action: string, entity_id: string, metadata: Record<string, unknown>) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase.from('audit_logs').insert({
+        actor_email: user?.email ?? null,
+        action,
+        entity_type: 'staff_users',
+        entity_id,
+        metadata,
+      });
+    } catch { /* audit is best-effort */ }
   };
 
   const handleAddStaff = async (values: AddValues) => {
     setActionLoading(true);
     try {
-      await callEdgeFunction({
-        action: 'add',
-        email: values.email,
-        role: values.role,
+      const email = values.email.trim().toLowerCase();
+      // 1. find the person's account (they must have signed up on the site)
+      const { data: profile, error: pErr } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .ilike('email', email)
+        .maybeSingle();
+      if (pErr) throw pErr;
+      if (!profile) {
+        showToast('error', 'No account found for that email. Ask them to sign up on the website first, then add them here.');
+        setActionLoading(false);
+        return;
+      }
+      // 2. already staff?
+      const { data: existing } = await supabase
+        .from('staff_users')
+        .select('user_id, status')
+        .eq('user_id', profile.id)
+        .maybeSingle();
+      if (existing) {
+        showToast('error', 'That person is already a staff member.');
+        setActionLoading(false);
+        return;
+      }
+      // 3. promote to staff (full access; only the founder/super_admin can manage staff)
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error: insErr } = await supabase.from('staff_users').insert({
+        user_id: profile.id,
+        full_name: values.full_name?.trim() || profile.full_name || email,
+        role: 'admin',
+        status: 'active',
+        created_by: user?.id ?? null,
       });
-      showToast('success', 'Staff member added successfully.');
-      reset({ email: '', role: 'support' });
+      if (insErr) throw insErr;
+      await writeAudit('staff.added', profile.id, { email });
+      showToast('success', `${profile.full_name || email} now has admin access.`);
+      reset({ email: '', full_name: '' });
       setShowAddForm(false);
       await loadAll();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not add staff member.';
-      showToast('error', msg);
+      showToast('error', msg.includes('policy') || msg.includes('permission') ? 'Permission denied — only the founder can add staff.' : msg);
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleDeactivate = async () => {
-    if (!confirmDeactivate) return;
+  const setStatus = async (row: StaffRow, status: 'active' | 'suspended') => {
     setActionLoading(true);
     try {
-      // We need the email for the edge function; fetch from profiles
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('email')
-        .eq('id', confirmDeactivate.user_id)
-        .maybeSingle();
-
-      const email = profile?.email;
-      if (!email) {
-        showToast('error', 'Could not resolve staff member email.');
-        setActionLoading(false);
-        return;
-      }
-
-      await callEdgeFunction({
-        action: 'deactivate',
-        email,
+      const { error } = await supabase.from('staff_users').update({ status }).eq('user_id', row.user_id);
+      if (error) throw error;
+      await writeAudit(status === 'suspended' ? 'staff.deactivated' : 'staff.reactivated', row.user_id, {
+        name: row.full_name,
       });
-      showToast('success', 'Staff member deactivated.');
+      showToast('success', status === 'suspended' ? 'Staff member deactivated.' : 'Staff member reactivated.');
       setConfirmDeactivate(null);
       await loadAll();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Could not deactivate staff member.';
+      const msg = err instanceof Error ? err.message : 'Could not update staff member.';
       showToast('error', msg);
     } finally {
       setActionLoading(false);
@@ -194,31 +185,27 @@ const StaffManagement = () => {
     });
   };
 
-  const formatAction = (action: string) => {
-    return action
-      .replace('staff.', '')
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase());
-  };
+  const formatAction = (action: string) =>
+    action.replace('staff.', '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
   return (
     <div className="space-y-6">
       {/* Toast */}
       {toast && (
         <div
-          className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-lg ${
+          className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-lg max-w-sm ${
             toast.type === 'success'
               ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
               : 'bg-red-50 border border-red-200 text-red-800'
           }`}
         >
           {toast.type === 'success' ? (
-            <CheckCircle size={18} className="text-emerald-600" />
+            <CheckCircle size={18} className="text-emerald-600 shrink-0" />
           ) : (
-            <AlertCircle size={18} className="text-red-600" />
+            <AlertCircle size={18} className="text-red-600 shrink-0" />
           )}
           <span className="text-sm font-medium">{toast.message}</span>
-          <button onClick={() => setToast(null)} className="text-slate-400 hover:text-slate-600">
+          <button onClick={() => setToast(null)} className="text-slate-400 hover:text-slate-600 shrink-0">
             <X size={16} />
           </button>
         </div>
@@ -231,9 +218,7 @@ const StaffManagement = () => {
             <UserCog className="h-6 w-6 text-slate-500" />
             Staff Management
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Add, manage, and audit operator access.
-          </p>
+          <p className="text-sm text-slate-500 mt-1">Add, manage, and audit operator access.</p>
         </div>
         <button
           onClick={() => setShowAddForm(!showAddForm)}
@@ -247,39 +232,32 @@ const StaffManagement = () => {
       {/* Add Staff Form */}
       {showAddForm && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6">
-          <h2 className="text-lg font-semibold text-slate-800 mb-4">Add a new staff member</h2>
+          <h2 className="text-lg font-semibold text-slate-800 mb-1">Add a new staff member</h2>
+          <p className="text-xs text-slate-400 mb-4">
+            The person must have <strong>signed up on the website first</strong>. Enter their email and their existing
+            account gets full admin access.
+          </p>
           <form onSubmit={handleSubmit(handleAddStaff)} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div>
-              <label className="block text-sm font-medium text-slate-600 mb-1.5">
-                Email
-              </label>
+              <label className="block text-sm font-medium text-slate-600 mb-1.5">Email</label>
               <input
                 type="email"
                 {...register('email')}
                 className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent text-slate-800"
-                placeholder="name@homitra.co.in"
+                placeholder="name@example.com"
               />
-              {errors.email && (
-                <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>
-              )}
+              {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-1.5">
-                Role
+                Display name <span className="text-slate-400 font-normal">(optional)</span>
               </label>
-              <select
-                {...register('role')}
-                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent text-slate-800 bg-white"
-              >
-                {ROLE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              {errors.role && (
-                <p className="text-red-500 text-xs mt-1">{errors.role.message}</p>
-              )}
+              <input
+                type="text"
+                {...register('full_name')}
+                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent text-slate-800"
+                placeholder="e.g. Priya (Ops)"
+              />
             </div>
             <div className="flex gap-2">
               <button
@@ -298,10 +276,6 @@ const StaffManagement = () => {
               </button>
             </div>
           </form>
-          <p className="text-xs text-slate-400 mt-3">
-            The person must have signed up on the site first. Their existing
-            account will be promoted to staff.
-          </p>
         </div>
       )}
 
@@ -330,9 +304,7 @@ const StaffManagement = () => {
                 {staff.map((row) => (
                   <tr key={row.user_id} className="hover:bg-slate-50">
                     <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-slate-800">
-                        {row.full_name || 'Unnamed'}
-                      </div>
+                      <div className="text-sm font-medium text-slate-800">{row.full_name || 'Unnamed'}</div>
                     </td>
                     <td className="px-6 py-4">
                       <span className="inline-flex items-center text-xs font-semibold capitalize px-2.5 py-1 rounded-full bg-sky-50 text-sky-700">
@@ -352,17 +324,26 @@ const StaffManagement = () => {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-500">
-                      {formatDate(row.created_at)}
-                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-500">{formatDate(row.created_at)}</td>
                     <td className="px-6 py-4 text-right">
-                      {row.status === 'active' && row.role !== 'super_admin' && (
+                      {row.role === 'super_admin' ? (
+                        <span className="text-xs text-slate-400">Founder</span>
+                      ) : row.status === 'active' ? (
                         <button
                           onClick={() => setConfirmDeactivate(row)}
                           className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 hover:text-red-700"
                         >
                           <Ban size={15} />
                           Deactivate
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => setStatus(row, 'active')}
+                          disabled={actionLoading}
+                          className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600 hover:text-emerald-700"
+                        >
+                          <RotateCcw size={15} />
+                          Reactivate
                         </button>
                       )}
                     </td>
@@ -390,9 +371,7 @@ const StaffManagement = () => {
                 <div className="w-2 h-2 rounded-full bg-sky-400 mt-2 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-slate-800">
-                      {formatAction(log.action)}
-                    </span>
+                    <span className="text-sm font-medium text-slate-800">{formatAction(log.action)}</span>
                     <span className="text-xs text-slate-400">by {log.actor_email || 'system'}</span>
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
@@ -415,12 +394,10 @@ const StaffManagement = () => {
             <div className="w-12 h-12 bg-red-50 rounded-xl flex items-center justify-center mx-auto mb-4">
               <Ban className="h-6 w-6 text-red-500" />
             </div>
-            <h3 className="text-lg font-semibold text-slate-800 text-center mb-2">
-              Deactivate staff member?
-            </h3>
+            <h3 className="text-lg font-semibold text-slate-800 text-center mb-2">Deactivate staff member?</h3>
             <p className="text-sm text-slate-500 text-center mb-6">
-              {confirmDeactivate.full_name || 'This staff member'} will lose
-              access to the admin console immediately.
+              {confirmDeactivate.full_name || 'This staff member'} will lose access to the admin console immediately. You
+              can reactivate them later.
             </p>
             <div className="flex gap-3">
               <button
@@ -431,7 +408,7 @@ const StaffManagement = () => {
                 Cancel
               </button>
               <button
-                onClick={handleDeactivate}
+                onClick={() => setStatus(confirmDeactivate, 'suspended')}
                 disabled={actionLoading}
                 className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50"
               >
